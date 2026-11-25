@@ -1,0 +1,215 @@
+@import "tailwindcss";
+
+/*
+  Tokens de cor. Claro por padrão; escuro pelo sistema (prefers-color-scheme) ou pela escolha
+  do usuário (data-tema). Contraste AA verificado para texto sobre --surface e --bg.
+  Cor por disciplina (consistente em todo o app): Português = azul, Legislação = violeta,
+  Específicos = esmeralda.
+*/
+:root {
+  --bg: #f2f6f7;
+  --surface: #ffffff;
+  --surface-2: #e9f0f2;
+  --fg: #0f1c21;
+  --muted: #475a62;
+  --border: #d6e0e4;
+  --border-strong: #78898f;
+  --accent: #0f766e; /* verde-petróleo: botões e destaques */
+  --accent-fg: #ffffff;
+  --accent-texto: #0f766e;
+  --accent-suave: #d6f2ea;
+  --verde-ai: #059669;
+  --ambar: #fbbf24;
+  --ambar-texto: #8a4b08;
+  --ambar-bg: #fff2cf;
+  --ok: #166534;
+  --ok-bg: #dcf5e5;
+  --bad: #b91c1c;
+  --bad-bg: #fde8e8;
+  --warn: #8a4b08;
+  --warn-bg: #fdf0dc;
+  --d-pt: #1d4ed8;
+  --d-pt-bg: #e1eaff;
+  --d-leg: #6d28d9;
+  --d-leg-bg: #ece3ff;
+  --d-esp: #047857;
+  --d-esp-bg: #d5f3e6;
+  --sombra: 0 1px 2px rgb(15 28 33 / 0.06), 0 6px 18px rgb(15 28 33 / 0.06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) {
+    --bg: #0a1114;
+    --surface: #121c20;
+    --surface-2: #182429;
+    --fg: #e6eef0;
+    --muted: #a3b4ba;
+    --border: #26363c;
+    --border-strong: #6b7f87;
+    --accent: #2dd4bf;
+    --accent-fg: #03211e;
+    --accent-texto: #5eead4;
+    --accent-suave: #0f2f2c;
+    --verde-ai: #34d399;
+    --ambar: #fbbf24;
+    --ambar-texto: #fbbf24;
+    --ambar-bg: #33270b;
+    --ok: #6ee7a0;
+    --ok-bg: #10301f;
+    --bad: #ff9f9f;
+    --bad-bg: #3a1a1a;
+    --warn: #f7c27d;
+    --warn-bg: #36270f;
+    --d-pt: #8fb4ff;
+    --d-pt-bg: #1b2a4d;
+    --d-leg: #c4a8ff;
+    --d-leg-bg: #2d2150;
+    --d-esp: #34d399;
+    --d-esp-bg: #0f3a2c;
+    --sombra: none;
+    color-scheme: dark;
+  }
+}
+:root[data-tema="escuro"] {
+  --bg: #0a1114;
+  --surface: #121c20;
+  --surface-2: #182429;
+  --fg: #e6eef0;
+  --muted: #a3b4ba;
+  --border: #26363c;
+  --border-strong: #6b7f87;
+  --accent: #2dd4bf;
+  --accent-fg: #03211e;
+  --accent-texto: #5eead4;
+  --accent-suave: #0f2f2c;
+  --verde-ai: #34d399;
+  --ambar: #fbbf24;
+  --ambar-texto: #fbbf24;
+  --ambar-bg: #33270b;
+  --ok: #6ee7a0;
+  --ok-bg: #10301f;
+  --bad: #ff9f9f;
+  --bad-bg: #3a1a1a;
+  --warn: #f7c27d;
+  --warn-bg: #36270f;
+  --d-pt: #8fb4ff;
+  --d-pt-bg: #1b2a4d;
+  --d-leg: #c4a8ff;
+  --d-leg-bg: #2d2150;
+  --d-esp: #34d399;
+  --d-esp-bg: #0f3a2c;
+  --sombra: none;
+  color-scheme: dark;
+}
+
+/* Tamanho de fonte: 3 níveis (rem escala tudo) */
+html { font-size: 100%; }
+html[data-fonte="grande"] { font-size: 112.5%; }
+html[data-fonte="maior"] { font-size: 125%; }
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-borda: var(--border);
+  --color-borda-forte: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-texto: var(--accent-texto);
+  --color-accent-suave: var(--accent-suave);
+  --color-verde-ai: var(--verde-ai);
+  --color-ambar: var(--ambar);
+  --color-ambar-texto: var(--ambar-texto);
+  --color-ambar-bg: var(--ambar-bg);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-bad: var(--bad);
+  --color-bad-bg: var(--bad-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-d: var(--d);
+  --color-d-bg: var(--d-bg);
+  --font-titulo: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-texto: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Cor da disciplina: aplique .disc-pt / .disc-leg / .disc-esp e use text-d, bg-d, bg-d-bg. */
+.disc-pt { --d: var(--d-pt); --d-bg: var(--d-pt-bg); }
+.disc-leg { --d: var(--d-leg); --d-bg: var(--d-leg-bg); }
+.disc-esp { --d: var(--d-esp); --d-bg: var(--d-esp-bg); }
+.disc-neutra { --d: var(--muted); --d-bg: var(--surface-2); }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+h1, h2, h3, .titulo {
+  font-family: var(--font-jakarta), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.numero-grande {
+  font-family: var(--font-jakarta), system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Foco sempre visível */
+:focus-visible {
+  outline: 3px solid var(--accent-texto);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  min-height: 2.75rem; padding: .5rem 1.1rem; border-radius: .75rem;
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--fg);
+  font-weight: 600; cursor: pointer; text-decoration: none;
+  transition: background-color .15s, border-color .15s, filter .15s;
+}
+.btn:hover { border-color: var(--accent-texto); background: var(--surface-2); }
+.btn-primario { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn-primario:hover { background: var(--accent); border-color: var(--accent); filter: brightness(1.1); }
+.btn-grande { min-height: 3.25rem; padding: .75rem 1.6rem; font-size: 1.05rem; }
+.btn[disabled] { opacity: .55; cursor: not-allowed; }
+.campo {
+  min-height: 2.75rem; padding: .4rem .7rem; border-radius: .75rem;
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--fg); width: 100%;
+}
+.cartao {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 1rem; /* 16px */
+  padding: 1.25rem; box-shadow: var(--sombra);
+}
+@media (min-width: 640px) { .cartao { padding: 1.5rem; } }
+.cartao-destaque { border-color: var(--accent); }
+.rotulo-secao {
+  font-size: .8125rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+.chip {
+  display: inline-flex; align-items: center; gap: .3rem; border-radius: 999px;
+  padding: .1rem .6rem; font-size: .8125rem; font-weight: 600;
+  color: var(--d, var(--muted)); background: var(--d-bg, var(--surface-2));
+}
+
+/* Anel de progresso: a transição do traço é curta e desligada em reduced-motion. */
+.anel-progresso { transition: stroke-dashoffset .5s ease; }
+
+/* Rótulos de ícone na navegação mobile */
+.nav-inferior { padding-bottom: env(safe-area-inset-bottom); }
