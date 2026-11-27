@@ -215,7 +215,8 @@ describe("conteúdo dos passos", () => {
     const p = plano.passos[0];
     expect(p.descricao).toBe("Ler resumo → vídeo opcional (12 min) → 5 questões");
     expect(p.href).toBe("/edital/7?n=5");
-    expect(p.minutos).toBe(10 + 12 + 15);
+    // Vídeo opcional não soma no tempo estimado do passo (resumo 10 min + 5 questões × 3 min = 25 min).
+    expect(p.minutos).toBe(10 + 15);
   });
 
   it("vídeo sem duração usa 15 min; tópico em progresso não pede teoria e vai direto às questões", () => {
@@ -303,24 +304,25 @@ describe("conteúdo dos passos", () => {
     });
     const semErros = montarPlano(base);
     const estudoAntes = semErros.passos.filter((p) => p.tipo === "estudo").map((p) => p.questoes);
-    expect(estudoAntes).toEqual([9, 8]);
+    // Sem subtrair reserva do fechamento (refeitas não somam na meta): 10 + 10 = 20 questões únicas
+    expect(estudoAntes).toEqual([10, 10]);
 
     const comErros = montarPlano({
       ...base,
       atividadeHoje: {
-        total: 21,
+        total: 20,
         revisao: 0,
         simulado: 0,
         porTopico: [
-          { topicoId: 3, feitas: 13 },
-          { topicoId: 4, feitas: 8 },
+          { topicoId: 3, feitas: 10 },
+          { topicoId: 4, feitas: 10 },
         ],
         erradasHoje: 6,
         refeitasHoje: 4,
       },
     });
-    // Os passos de estudo mantêm a mesma cota (9 e 8), não encolhem para 8 e 7.
-    expect(comErros.passos.filter((p) => p.tipo === "estudo").map((p) => p.questoes)).toEqual([9, 8]);
+    // Os passos de estudo mantêm a mesma cota (10 e 10), não encolhem conforme surgem erros.
+    expect(comErros.passos.filter((p) => p.tipo === "estudo").map((p) => p.questoes)).toEqual([10, 10]);
     const fech = comErros.passos[comErros.passos.length - 1];
     expect(fech.tipo).toBe("fechamento");
     expect(fech.questoes).toBe(6);
@@ -433,9 +435,28 @@ describe("conteúdo dos passos", () => {
 });
 
 describe("simulado no domingo", () => {
-  it("sugere simulado completo no domingo com >= 210 min", () => {
+  it("sugere simulado completo no domingo com >= 210 min quando já tem base suficiente", () => {
     const plano = montarPlano(entrada({ hoje: "2027-01-03" })); // domingo, 240 min
     expect(plano.sugestaoSimulado).not.toBeNull();
+    expect(plano.passos.some((p) => p.tipo === "simulado" && p.titulo.includes("Simulado completo"))).toBe(true);
+  });
+  it("no início da Cobertura (< 40% ou só 1 disciplina vista), troca por simulado da semana + até 2 tópicos novos", () => {
+    const topicosInicio = [
+      topico({ id: 1, disciplina_id: 3, estado: "em_progresso", dominio: 0.6 }),
+      topico({ id: 2, disciplina_id: 3, estado: "nao_visto", dominio: 0.2 }),
+      topico({ id: 3, disciplina_id: 3, estado: "nao_visto", dominio: 0.2 }),
+      topico({ id: 4, disciplina_id: 2, estado: "nao_visto", dominio: 0.2 }),
+      topico({ id: 5, disciplina_id: 1, estado: "nao_visto", dominio: 0.2 }),
+    ];
+    const plano = montarPlano(entrada({ hoje: "2026-11-29", topicos: topicosInicio })); // domingo na Cobertura
+    const sim = plano.passos.find((p) => p.tipo === "simulado");
+    expect(sim).toBeDefined();
+    expect(sim!.titulo).toContain("Simulado da semana");
+    expect(sim!.href).toContain("modo=vistos");
+    // Além do simulado semanal, inclui até 2 tópicos novos no domingo
+    const estudos = plano.passos.filter((p) => p.tipo === "estudo");
+    expect(estudos.length).toBeGreaterThan(0);
+    expect(estudos.length).toBeLessThanOrEqual(2);
   });
   it("não sugere em dia de semana nem com energia baixa", () => {
     expect(montarPlano(entrada()).sugestaoSimulado).toBeNull();
@@ -469,6 +490,30 @@ describe("domínio", () => {
     expect(calcularDominio([ok, erro], hoje).estado).toBe("em_progresso");
     expect(calcularDominio(Array(5).fill(ok), hoje).estado).toBe("em_progresso");
     expect(calcularDominio(Array(8).fill(ok), hoje).estado).toBe("dominado");
+  });
+  it("repetir a mesma questão no mesmo dia não infla o domínio (vale só a 1ª do dia); em outro dia conta", () => {
+    const d1 = calcularDominio(
+      [
+        { questao_id: 10, acertou: false, chutou: false, criada_em: "2026-12-09 10:00:00" },
+        { questao_id: 10, acertou: true, chutou: false, criada_em: "2026-12-09 10:15:00" },
+        { questao_id: 10, acertou: true, chutou: false, criada_em: "2026-12-09 10:20:00" },
+      ],
+      hoje,
+    );
+    expect(d1.tentativas).toBe(1);
+    expect(d1.estado).toBe("fraco");
+
+    // No dia seguinte, acertar a mesma questão conta normalmente
+    const d2 = calcularDominio(
+      [
+        { questao_id: 10, acertou: false, chutou: false, criada_em: "2026-12-09 10:00:00" },
+        { questao_id: 10, acertou: true, chutou: false, criada_em: "2026-12-09 10:15:00" },
+        { questao_id: 10, acertou: true, chutou: false, criada_em: "2026-12-10 09:00:00" },
+      ],
+      hoje,
+    );
+    expect(d2.tentativas).toBe(2);
+    expect(d2.estado).toBe("em_progresso");
   });
   it("projeção de nota = domínio médio x questões x 2", () => {
     const p = projetarNota(

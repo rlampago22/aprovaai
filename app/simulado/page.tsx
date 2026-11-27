@@ -21,9 +21,11 @@ import {
   contarErradasNoPeriodo,
   criarSimulado,
   descartarSimulado,
+  ehProvaOficial,
   getDisciplinas,
   getTopicos,
   listarSimulados,
+  todasQuestoes,
   type CriarSimuladoInput,
 } from "@/lib/queries";
 import { TEMPO_SIMULADO_COMPLETO_MIN } from "@/lib/simulado";
@@ -32,6 +34,7 @@ export default function SimuladoPage() {
   const router = useRouter();
   const { pronto, erro, catalogo, estado, substituirEstado, atualizarEstado } = useStore();
   const [erroCriar, setErroCriar] = useState<string | null>(null);
+  const [soOficiaisCompleto, setSoOficiaisCompleto] = useState(false);
 
   if (!pronto || !catalogo) return <CarregandoApp erro={erro} />;
 
@@ -39,6 +42,9 @@ export default function SimuladoPage() {
   const disciplinas = getDisciplinas(catalogo);
   const topicos = getTopicos(catalogo, estado, hoje);
   const simulados = listarSimulados(estado);
+  const qsTodas = todasQuestoes(catalogo, estado);
+  const topicoPorId = new Map(catalogo.topicos.map((t) => [t.id, t]));
+  const totalOficiaisGeral = qsTodas.filter((q) => ehProvaOficial(q.origem)).length;
 
   const emAndamento = simulados.filter((s) => !s.finalizado_em);
   const concluidos = simulados.filter((s) => !!s.finalizado_em);
@@ -50,6 +56,9 @@ export default function SimuladoPage() {
     totalBanco: topicos
       .filter((t) => t.disciplina_id === d.id)
       .reduce((s, t) => s + t.n_questoes, 0),
+    totalOficiais: qsTodas.filter(
+      (q) => topicoPorId.get(q.topico_id)?.disciplina_id === d.id && ehProvaOficial(q.origem),
+    ).length,
   }));
 
   const erradasPorPeriodo = [7, 14, 30].map((dias) => ({
@@ -140,18 +149,29 @@ export default function SimuladoPage() {
               50 questões nas proporções exatas da prova real
             </p>
             <p className="mt-1 text-sm text-muted">
-              O sistema prioriza questões que você ainda não viu e espalha entre os tópicos. Só mostra o gabarito e o
-              veredito (aprovado ou eliminado pelos mínimos) quando você entregar.
+              O sistema prioriza questões de provas oficiais da Fundatec que você ainda não viu e espalha entre os
+              tópicos. Só mostra o gabarito e o veredito (aprovado ou eliminado pelos mínimos) quando você entregar.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => iniciarSimulado({ tipo: "completo" })}
-            className="btn btn-primario btn-grande"
-          >
-            <Play aria-hidden="true" className="size-5" />
-            Começar simulado completo
-          </button>
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <button
+              type="button"
+              onClick={() => iniciarSimulado({ tipo: "completo", soOficiais: soOficiaisCompleto })}
+              className="btn btn-primario btn-grande"
+            >
+              <Play aria-hidden="true" className="size-5" />
+              Começar simulado completo
+            </button>
+            <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-muted">
+              <input
+                type="checkbox"
+                checked={soOficiaisCompleto}
+                onChange={(e) => setSoOficiaisCompleto(e.target.checked)}
+                className="size-4 accent-[var(--accent)]"
+              />
+              Só provas oficiais da Fundatec ({totalOficiaisGeral} no banco)
+            </label>
+          </div>
         </div>
 
         <div className="grid gap-2.5 sm:grid-cols-4">

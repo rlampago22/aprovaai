@@ -14,7 +14,9 @@ import {
   MINUTOS_SIMULADO_COMPLETO,
   montarPlano,
   prioridadeTopico,
+  prontoParaSimuladoCompleto,
   QUESTOES_SIMULADO_COMPLETO,
+  QUESTOES_SIMULADO_SEMANAL,
   type AtividadeHoje,
   type DisciplinaPlanner,
   type Energia,
@@ -26,6 +28,7 @@ export type TipoDiaCronograma =
   | "passado"
   | "estudo"
   | "simulado"
+  | "simulado_semanal"
   | "reta_final"
   | "folga"
   | "prova";
@@ -37,6 +40,30 @@ export interface TopicoPrevistoDia {
   ordem: number;
   titulo_curto: string;
   modo: "novo" | "expresso" | "revisao_topico";
+  estadoPasso?: "a_fazer" | "em_andamento" | "feito";
+}
+
+export interface TopicoRealizadoDia {
+  id: number;
+  disciplina_id: number;
+  disciplina_nome: string;
+  ordem: number;
+  titulo_curto: string;
+  questoes: number;
+  acertos: number;
+  resumoLido: boolean;
+  videoAssistido: boolean;
+}
+
+export interface HistoricoDiaPassado {
+  questoes: number;
+  acertos: number;
+  revisao: number;
+  simulado: number;
+  minutos: number;
+  tempoMedioSegundos: number | null;
+  topicos: TopicoRealizadoDia[];
+  simulados: { id: number; titulo: string; nota: number | null }[];
 }
 
 export interface DiaCronograma {
@@ -51,6 +78,7 @@ export interface DiaCronograma {
   feitoQuestoes: number;
   temAquecimento: boolean;
   topicos: TopicoPrevistoDia[];
+  historico?: HistoricoDiaPassado;
   resumo: string;
 }
 
@@ -66,6 +94,7 @@ export interface SemanaCronograma {
   minutosPrevistos: number;
   topicosNovosPrevistos: number;
   temSimuladoCompleto: boolean;
+  temSimuladoSemanal: boolean;
   dias: DiaCronograma[];
 }
 
@@ -92,6 +121,7 @@ export interface ResumoCronograma {
   concluiNaCobertura: boolean;
   topicosNaoCobertosAteProva: number;
   simuladosCompletosPrevistos: number;
+  simuladosSemanaisPrevistos: number;
   minutosSemanaisPerfil: number;
   questoesSemanaisPerfil: number;
   semanas: SemanaCronograma[];
@@ -115,6 +145,7 @@ export interface EntradaCronograma {
   metaHoje: number;
   atividadeHoje?: AtividadeHoje;
   feitoNaSemanaAtual?: Record<string, number>;
+  historicoPassado?: Record<string, HistoricoDiaPassado>;
 }
 
 /** Limite de segurança para não gerar cronogramas gigantes caso a data da prova esteja anos à frente. */
@@ -211,6 +242,7 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
     metaHoje,
     atividadeHoje,
     feitoNaSemanaAtual = {},
+    historicoPassado = {},
   } = entrada;
 
   const dataProva = perfil.data_prova;
@@ -260,6 +292,7 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
   let jaTeveEstudo = topicosJaVistos > 0 || (atividadeHoje?.total ?? 0) > 0;
   let dataConclusaoCobertura: string | null = topicosNaoVistosInicial === 0 ? hoje : null;
   let simuladosCompletosPrevistos = 0;
+  let simuladosSemanaisPrevistos = 0;
 
   const todosDias: DiaCronograma[] = [];
   let cursor = inicioSemanaAtual;
@@ -272,8 +305,16 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
 
     if (cursor < hoje) {
       const minPerfil = Math.max(0, perfil.minutos_por_dia[dia] ?? 0);
-      const feito = feitoNaSemanaAtual[cursor] ?? 0;
+      const hist = historicoPassado[cursor];
+      const feito = hist?.questoes ?? feitoNaSemanaAtual[cursor] ?? 0;
       const metaBase = minPerfil > 0 ? metaQuestoesDoDia(minPerfil) : 0;
+      const temConteudo = (hist?.topicos.some((t) => t.resumoLido || t.videoAssistido) ?? false);
+      const resumoPassado =
+        feito > 0
+          ? `${feito} ${feito === 1 ? "questão feita" : "questões feitas"}`
+          : temConteudo
+            ? "Teoria estudada (sem questões registradas)"
+            : "Sem registro";
       todosDias.push({
         data: cursor,
         dia,
@@ -286,7 +327,8 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
         feitoQuestoes: feito,
         temAquecimento: false,
         topicos: [],
-        resumo: feito > 0 ? `${feito} ${feito === 1 ? "questão feita" : "questões feitas"}` : "Sem registro",
+        historico: hist,
+        resumo: resumoPassado,
       });
       cursor = somarDias(cursor, 1);
       continue;
@@ -334,11 +376,14 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
     if (cursor === hoje) {
       const topicosDia: TopicoPrevistoDia[] = [];
       const ehSimuladoHoje = planoHoje.passos.some((p) => p.tipo === "simulado" && p.minutos >= MINUTOS_SIMULADO_COMPLETO);
+      const ehSimuladoSemanalHoje =
+        !ehSimuladoHoje && planoHoje.passos.some((p) => p.tipo === "simulado" && p.href.includes("modo=vistos"));
       const temAquec = planoHoje.passos.some((p) => p.tipo === "aquecimento");
 
       if (ehSimuladoHoje) {
         simuladosCompletosPrevistos++;
       } else {
+        if (ehSimuladoSemanalHoje) simuladosSemanaisPrevistos++;
         for (const passo of planoHoje.passos) {
           if (passo.tipo !== "estudo" || !passo.topicoId) continue;
           const orig = porId.get(passo.topicoId);
@@ -356,6 +401,7 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
             ordem: orig.ordem,
             titulo_curto: orig.titulo_curto,
             modo,
+            estadoPasso: passo.estado,
           });
           // Marca como visto na simulação para os próximos dias avançarem na fila
           const s = simPorId.get(orig.id);
@@ -377,7 +423,13 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
         rotuloCurto,
         ehHoje: true,
         fase,
-        tipo: ehSimuladoHoje ? "simulado" : fase === "reta_final" ? "reta_final" : "estudo",
+        tipo: ehSimuladoHoje
+          ? "simulado"
+          : ehSimuladoSemanalHoje
+            ? "simulado_semanal"
+            : fase === "reta_final"
+              ? "reta_final"
+              : "estudo",
         minutosPlanejados: planoHoje.minutosEfetivos,
         metaQuestoes: planoHoje.metaQuestoes,
         feitoQuestoes: atividadeHoje?.total ?? 0,
@@ -385,9 +437,11 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
         topicos: topicosDia,
         resumo: ehSimuladoHoje
           ? "Simulado completo (50 questões · 3h30)"
-          : topicosDia.length > 0
-            ? `${topicosDia.length} ${topicosDia.length === 1 ? "tópico" : "tópicos"} no roteiro de hoje`
-            : "Revisão e prática livre",
+          : ehSimuladoSemanalHoje
+            ? `Simulado da semana (${QUESTOES_SIMULADO_SEMANAL} questões dos tópicos vistos) + estudo`
+            : topicosDia.length > 0
+              ? `${topicosDia.length} ${topicosDia.length === 1 ? "tópico" : "tópicos"} no roteiro de hoje`
+              : "Revisão e prática livre",
       });
       cursor = somarDias(cursor, 1);
       continue;
@@ -416,26 +470,77 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
 
     const metaDia = metaQuestoesDoDia(minutosDia);
 
-    // Domingo com >= 3h30 -> Simulado completo (igual ao planner.ts)
+    // Domingo com >= 3h30: simulado completo quando já houver base suficiente, senão simulado da semana + 2 tópicos novos.
     if (dia === "dom" && minutosDia >= MINUTOS_SIMULADO_COMPLETO) {
-      simuladosCompletosPrevistos++;
-      jaTeveEstudo = true;
-      todosDias.push({
-        data: cursor,
-        dia,
-        rotuloCurto,
-        ehHoje: false,
-        fase,
-        tipo: "simulado",
-        minutosPlanejados: MINUTOS_SIMULADO_COMPLETO,
-        metaQuestoes: QUESTOES_SIMULADO_COMPLETO,
-        feitoQuestoes: 0,
-        temAquecimento: false,
-        topicos: [],
-        resumo: "Simulado completo (50 questões · 3h30)",
-      });
-      cursor = somarDias(cursor, 1);
-      continue;
+      const prontoCompleto = prontoParaSimuladoCompleto(fase, simulados, disciplinas.length);
+      if (prontoCompleto) {
+        simuladosCompletosPrevistos++;
+        jaTeveEstudo = true;
+        todosDias.push({
+          data: cursor,
+          dia,
+          rotuloCurto,
+          ehHoje: false,
+          fase,
+          tipo: "simulado",
+          minutosPlanejados: MINUTOS_SIMULADO_COMPLETO,
+          metaQuestoes: QUESTOES_SIMULADO_COMPLETO,
+          feitoQuestoes: 0,
+          temAquecimento: false,
+          topicos: [],
+          resumo: "Simulado completo (50 questões · 3h30)",
+        });
+        cursor = somarDias(cursor, 1);
+        continue;
+      }
+
+      if (simulados.some((t) => t.estado !== "nao_visto")) {
+        simuladosSemanaisPrevistos++;
+        const naoVistosAgora = simulados.filter((t) => t.estado === "nao_visto");
+        const topicosDia: TopicoPrevistoDia[] = [];
+        if (naoVistosAgora.length > 0) {
+          const ordenados = [...naoVistosAgora].sort(
+            (a, b) =>
+              prioridadeTopico(b, disciplinas, fase, "media", false) -
+                prioridadeTopico(a, disciplinas, fase, "media", false) || a.id - b.id,
+          );
+          for (const t of ordenados.slice(0, 2)) {
+            topicosDia.push({
+              id: t.id,
+              disciplina_id: t.disciplina_id,
+              disciplina_nome: t.disciplina_nome,
+              ordem: t.ordem,
+              titulo_curto: t.titulo_curto,
+              modo: "novo",
+            });
+            t.estado = "em_progresso";
+            t.dominio = 0.6;
+          }
+        }
+        jaTeveEstudo = true;
+        if (dataConclusaoCobertura === null && simulados.every((t) => t.estado !== "nao_visto")) {
+          dataConclusaoCobertura = cursor;
+        }
+        todosDias.push({
+          data: cursor,
+          dia,
+          rotuloCurto,
+          ehHoje: false,
+          fase,
+          tipo: "simulado_semanal",
+          minutosPlanejados: minutosDia,
+          metaQuestoes: metaDia,
+          feitoQuestoes: 0,
+          temAquecimento: true,
+          topicos: topicosDia,
+          resumo:
+            topicosDia.length > 0
+              ? `Simulado da semana (${QUESTOES_SIMULADO_SEMANAL} questões dos tópicos vistos) + ${topicosDia.length} ${topicosDia.length === 1 ? "tópico novo" : "tópicos novos"}`
+              : `Simulado da semana (${QUESTOES_SIMULADO_SEMANAL} questões dos tópicos vistos)`,
+        });
+        cursor = somarDias(cursor, 1);
+        continue;
+      }
     }
 
     const nPassos = Math.max(1, Math.floor(minutosDia / MINUTOS_BLOCO));
@@ -568,6 +673,7 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
         0,
       ),
       temSimuladoCompleto: slice.some((d) => d.tipo === "simulado"),
+      temSimuladoSemanal: slice.some((d) => d.tipo === "simulado_semanal"),
       dias: slice,
     });
   }
@@ -590,6 +696,7 @@ export function montarCronograma(entrada: EntradaCronograma): ResumoCronograma {
     concluiNaCobertura,
     topicosNaoCobertosAteProva,
     simuladosCompletosPrevistos,
+    simuladosSemanaisPrevistos,
     minutosSemanaisPerfil,
     questoesSemanaisPerfil,
     semanas,

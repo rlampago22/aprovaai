@@ -1,7 +1,7 @@
 import { Flag, Layers, TriangleAlert, Trophy } from "lucide-react";
 import type { RitmoCobertura } from "@/lib/cobertura";
 import { classeDisciplina, nomeCurtoDisciplina } from "@/lib/disciplinas-ui";
-import type { ProjecaoNota } from "@/lib/dominio";
+import { NOTA_MINIMA_GERAL, type ProjecaoNota } from "@/lib/dominio";
 
 interface Props {
   projecao: ProjecaoNota;
@@ -58,20 +58,40 @@ export default function RumoProva({ projecao, questoesPorDisciplina, notaAlvo, c
   const temBase = totalFeitas >= MIN_QUESTOES_PROJECAO;
   const comDados = (id: number) => temBase && (tentativasPorDisciplina[id] ?? 0) >= MIN_QUESTOES_DISCIPLINA;
   const abaixo = projecao.porDisciplina.filter((d) => comDados(d.disciplina_id) && !d.atingeMinimo);
+  const totalQuestoesProva = Object.values(questoesPorDisciplina).reduce((a, b) => a + b, 0) || 50;
+  const acertosEsperadosTotal = projecao.porDisciplina.reduce((s, d) => s + d.acertosEsperados, 0);
+  const minimoAcertosTotal = (NOTA_MINIMA_GERAL / 100) * totalQuestoesProva;
+  const metaAcertosTotal = (notaAlvo / 100) * totalQuestoesProva;
   return (
     <section aria-labelledby="h-rumo" className="cartao">
       <h2 id="h-rumo" className="rotulo-secao flex items-center gap-2">
         <Trophy aria-hidden="true" className="size-4" />
         Rumo à prova
       </h2>
-      <p className="mt-2 flex items-baseline gap-2">
-        <span className="numero-grande text-5xl">{temBase ? Math.round(projecao.nota) : "—"}</span>
-        <span className="text-lg font-bold text-muted">/ 100</span>
-        <span className="ml-auto text-sm text-muted">meta: {notaAlvo}</span>
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-2">
+        <p className="flex items-baseline gap-1.5">
+          <span className="numero-grande text-5xl">{temBase ? Math.round(projecao.nota) : "—"}</span>
+          <span className="text-lg font-bold text-muted">/ 100 pts</span>
+        </p>
+        <p className="inline-flex items-baseline gap-1.5 rounded-xl bg-surface-2 px-3 py-1">
+          <span className="numero-grande text-2xl text-fg">
+            {temBase ? `~${decimal(acertosEsperadosTotal)}` : "—"}
+          </span>
+          <span className="text-sm font-semibold text-muted">/ {totalQuestoesProva} questões</span>
+        </p>
+      </div>
+      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-muted tabular-nums">
+        <span>
+          Mínimo: {NOTA_MINIMA_GERAL} pts ({decimal(minimoAcertosTotal)}/{totalQuestoesProva})
+        </span>
+        <span aria-hidden="true">·</span>
+        <span className="text-ambar-texto">
+          Meta: {notaAlvo} pts ({decimal(metaAcertosTotal)}/{totalQuestoesProva})
+        </span>
       </p>
-      <p className="text-sm text-muted">
+      <p className="mt-2 text-sm text-muted">
         {temBase
-          ? "Projeção se a prova fosse hoje, pelo que você já acertou. Tópico ainda não praticado conta como chute (25%)."
+          ? "Projeção se a prova fosse hoje (cada questão vale 2 pontos). Tópico ainda não praticado conta como chute (25%) — a nota sobe conforme você avança no edital."
           : `A projeção aparece depois das suas primeiras ${MIN_QUESTOES_PROJECAO} questões (você fez ${totalFeitas}). Antes disso, seria só um palpite.`}
       </p>
 

@@ -54,11 +54,56 @@ describe("montarCronograma", () => {
     expect(r.topicosNaoCobertosAteProva).toBe(0);
     expect(r.dataConclusaoCobertura).not.toBeNull();
 
-    // Domingos antes da prova têm simulado completo (29/11, 06/12, 13/12, 20/12, 27/12, 03/01, 10/01, 17/01, 24/01 = 9)
-    expect(r.simuladosCompletosPrevistos).toBe(9);
+    // Primeiros domingos na Cobertura fazem simulado semanal; depois de 40% em 2+ disciplinas viram simulado completo (total = 9 domingos)
+    expect(r.simuladosSemanaisPrevistos).toBeGreaterThanOrEqual(1);
+    expect(r.simuladosCompletosPrevistos).toBeGreaterThanOrEqual(6);
+    expect(r.simuladosCompletosPrevistos + r.simuladosSemanaisPrevistos).toBe(9);
     // Dia da prova marcado corretamente
     const diaProva = r.semanas.flatMap((s) => s.dias).find((d) => d.data === "2027-01-31");
     expect(diaProva?.tipo).toBe("prova");
+  });
+
+  it("anexa histórico detalhado nos dias passados da semana atual", () => {
+    const r = montarCronograma({
+      hoje: "2026-11-25", // quarta
+      perfil: {
+        data_prova: "2027-01-31",
+        minutos_por_dia: { seg: 120, ter: 120, qua: 120, qui: 120, sex: 120, sab: 180, dom: 240 },
+      },
+      disciplinas: DISCIPLINAS,
+      topicos: criarTopicos(10),
+      revisoesVencidasHoje: 0,
+      metaHoje: 26,
+      historicoPassado: {
+        "2026-11-24": {
+          questoes: 24,
+          acertos: 16,
+          revisao: 0,
+          simulado: 0,
+          minutos: 45,
+          tempoMedioSegundos: 75,
+          topicos: [
+            {
+              id: 1,
+              disciplina_id: 3,
+              disciplina_nome: "Conhecimentos Específicos",
+              ordem: 1,
+              titulo_curto: "Administração Pública",
+              questoes: 14,
+              acertos: 8,
+              resumoLido: true,
+              videoAssistido: false,
+            },
+          ],
+          simulados: [],
+        },
+      },
+    });
+    const ter = r.semanas[0].dias.find((d) => d.data === "2026-11-24");
+    expect(ter?.tipo).toBe("passado");
+    expect(ter?.feitoQuestoes).toBe(24);
+    expect(ter?.historico?.acertos).toBe(16);
+    expect(ter?.historico?.topicos).toHaveLength(1);
   });
 
   it("respeita dias de folga (0 min) e sinaliza quando não dá para cobrir tudo até a prova", () => {

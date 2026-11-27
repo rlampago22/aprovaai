@@ -4,10 +4,30 @@ import { diasEntre } from "./datas";
 export type EstadoTopico = "nao_visto" | "fraco" | "em_progresso" | "dominado";
 
 export interface TentativaDominio {
+  /** Opcional: quando presente, repetições da mesma questão no mesmo dia são ignoradas (vale só a 1ª do dia). */
+  questao_id?: number;
   acertou: boolean;
   chutou: boolean;
   /** Data/hora ISO da tentativa (só os 10 primeiros caracteres importam). */
   criada_em: string;
+}
+
+/**
+ * Mantém apenas a primeira tentativa de cada questão por dia (na ordem recebida).
+ * Itens sem `questao_id` passam direto (compatibilidade com testes unitários).
+ */
+export function deduplicarTentativasPorDia<T extends { questao_id?: number; criada_em: string }>(lista: T[]): T[] {
+  const vistos = new Set<string>();
+  const out: T[] = [];
+  for (const t of lista) {
+    if (t.questao_id != null) {
+      const chave = `${t.questao_id}|${t.criada_em.slice(0, 10)}`;
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+    }
+    out.push(t);
+  }
+  return out;
 }
 
 export interface ResultadoDominio {
@@ -47,16 +67,17 @@ export function calcularDominio(
   hoje: string,
   prior: number = priorDoNivel(3),
 ): ResultadoDominio {
-  if (tentativas.length === 0) return { dominio: prior, estado: "nao_visto", tentativas: 0 };
+  const unicas = deduplicarTentativasPorDia(tentativas);
+  if (unicas.length === 0) return { dominio: prior, estado: "nao_visto", tentativas: 0 };
   let acertos = 0;
   let total = 0;
-  for (const t of tentativas) {
+  for (const t of unicas) {
     const w = pesoRecencia(t.criada_em, hoje);
     total += w;
     if (t.acertou) acertos += w * (t.chutou ? 0.5 : 1);
   }
   const dominio = (acertos + 1) / (total + 2);
-  return { dominio, estado: estadoDoDominio(dominio, tentativas.length), tentativas: tentativas.length };
+  return { dominio, estado: estadoDoDominio(dominio, unicas.length), tentativas: unicas.length };
 }
 
 export interface DisciplinaNota {

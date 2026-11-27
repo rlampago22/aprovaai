@@ -18,11 +18,11 @@ import {
 import BarraDominio from "@/components/BarraDominio";
 import Markdown from "@/components/Markdown";
 import ResumoComCronometro from "@/components/edital/ResumoComCronometro";
+import VideoComTempo from "@/components/edital/VideoComTempo";
 import { CarregandoApp, useStore } from "@/components/StoreProvider";
 import { formatarDuracao } from "@/lib/datas";
 import { classeDisciplina, nomeCurtoDisciplina } from "@/lib/disciplinas-ui";
 import {
-  alternarEstudo,
   getConteudos,
   getEstudos,
   getTopicos,
@@ -31,11 +31,6 @@ import {
 } from "@/lib/queries";
 import { extrairSecoes } from "@/lib/resumo";
 import { extrairIdYoutube, urlEmbedYoutube } from "@/lib/youtube";
-
-function dataBR(feitoEm: string): string {
-  const [a, m, d] = feitoEm.slice(0, 10).split("-");
-  return `${d}/${m}/${a}`;
-}
 
 function Etapa({
   n,
@@ -74,7 +69,7 @@ function Etapa({
 
 function TrilhaInterna({ topicoId }: { topicoId: number }) {
   const sp = useSearchParams();
-  const { pronto, erro, catalogo, estado, atualizarEstado } = useStore();
+  const { pronto, erro, catalogo, estado } = useStore();
   if (!pronto || !catalogo) return <CarregandoApp erro={erro} />;
 
   const topico = getTopicos(catalogo, estado).find((t) => t.id === topicoId);
@@ -232,7 +227,7 @@ function TrilhaInterna({ topicoId }: { topicoId: number }) {
                 <h3 className="font-bold">{v.titulo}</h3>
                 <p className="text-sm text-muted">
                   {v.canal ? `Canal: ${v.canal}` : "YouTube"}
-                  {dur ? ` · ${dur} min` : ""}
+                  {dur ? ` · ${formatarDuracao(dur)}` : ""}
                 </p>
               </div>
               {vid && (
@@ -248,24 +243,12 @@ function TrilhaInterna({ topicoId }: { topicoId: number }) {
                   />
                 </div>
               )}
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  aria-pressed={!!estudo}
-                  onClick={() =>
-                    atualizarEstado((atual) => alternarEstudo(catalogo, atual, v.id).estado)
-                  }
-                  className={`btn ${estudo ? "border-ok bg-ok-bg text-ok" : "btn-primario"}`}
-                >
-                  <Check aria-hidden="true" className="size-4" />
-                  {estudo ? "Assistido" : `Marcar como assistido (${minutosEstimados(v)} min)`}
-                </button>
-                {estudo && (
-                  <span className="text-sm text-muted">
-                    em {dataBR(estudo.feitoEm)} · {formatarDuracao(estudo.minutos)} · clique para desfazer
-                  </span>
-                )}
-              </div>
+              <VideoComTempo
+                conteudoId={v.id}
+                duracaoReal={dur}
+                minutosPadrao={minutosEstimados(v)}
+                estudo={estudo}
+              />
             </div>
           );
         })}

@@ -152,7 +152,9 @@ describe("queries no navegador (sem SQLite)", () => {
     expect(dif[0].dificuldades).toBe(1);
 
     const atv = getAtividadeHoje(cat, st, hoje);
-    expect(atv.total).toBe(2);
+    expect(atv.total).toBe(1);
+    expect(atv.respostasHoje).toBe(2);
+    expect(atv.refeitasMesmoDia).toBe(1);
     expect(atv.erradasHoje).toBe(1);
     expect(atv.refeitasHoje).toBe(1);
   });

@@ -219,7 +219,13 @@ export default function Player({ questoes: questoesIniciais, origem, metaHoje, f
                 não revisada
               </span>
             )}
-            <span>{ROTULO_ORIGEM[q.origem] ?? q.origem}</span>
+            {q.origem === "prova_oficial" || q.origem === "adaptada" ? (
+              <span className="rounded-full bg-accent-suave px-2.5 py-0.5 text-xs font-semibold text-accent-texto">
+                {ROTULO_ORIGEM[q.origem] ?? q.origem}
+              </span>
+            ) : (
+              <span>{ROTULO_ORIGEM[q.origem] ?? q.origem}</span>
+            )}
             <span aria-hidden="true" className="inline-flex items-center gap-1 tabular-nums">
               <Timer className="size-3.5" />
               {mmss(segundos)}

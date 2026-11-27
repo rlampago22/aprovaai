@@ -1,6 +1,7 @@
 // Cálculos puros da página de Desempenho (sem banco nem relógio).
 import { formatarDataCurta, somarDias } from "./datas";
 import {
+  deduplicarTentativasPorDia,
   NOTA_MINIMA_GERAL,
   PONTOS_POR_QUESTAO,
   projetarNota,
@@ -27,6 +28,8 @@ const TEMPO_MAX_QUESTAO_MS = 30 * 60 * 1000;
 export const TEMPO_PROVA_POR_QUESTAO_S = Math.round((210 * 60) / 50);
 
 export interface TentativaDesempenho {
+  /** Opcional: quando presente, repetições da mesma questão no mesmo dia contam só 1× nos acertos/meta (1ª do dia). */
+  questao_id?: number;
   topico_id: number;
   disciplina_id: number;
   acertou: boolean;
@@ -107,6 +110,8 @@ export interface TendenciaSemanal {
 
 export interface ResumoGeralDesempenho {
   totalTentativas: number;
+  /** Total bruto de respostas gravadas, incluindo refeitas no mesmo dia. */
+  totalRespostasBrutas: number;
   totalAcertos: number;
   totalAcertosSemChute: number;
   totalChutes: number;
@@ -155,10 +160,11 @@ export interface EntradaDesempenho {
 
 /** Agrupa as tentativas nas últimas N semanas (segunda a domingo), da mais antiga até a atual. */
 export function calcularEvolucaoSemanal(
-  tentativas: Pick<TentativaDesempenho, "acertou" | "chutou" | "criada_em">[],
+  tentativas: Pick<TentativaDesempenho, "questao_id" | "acertou" | "chutou" | "criada_em">[],
   hoje: string,
   nSemanas: number = SEMANAS_EVOLUCAO,
 ): { semanas: SemanaEvolucao[]; tendencia: TendenciaSemanal | null } {
+  const unicas = deduplicarTentativasPorDia(tentativas);
   const inicioAtual = inicioDaSemana(hoje);
   const semanas: SemanaEvolucao[] = [];
   const porInicio = new Map<string, { semana: SemanaEvolucao; dias: Set<string> }>();
@@ -183,7 +189,7 @@ export function calcularEvolucaoSemanal(
     porInicio.set(inicio, { semana, dias: new Set() });
   }
 
-  for (const t of tentativas) {
+  for (const t of unicas) {
     const data = t.criada_em.slice(0, 10);
     const ini = inicioDaSemana(data);
     const bucket = porInicio.get(ini);
@@ -261,16 +267,10 @@ export function calcularDesempenho(entrada: EntradaDesempenho): ResumoDesempenho
     if (d) diasComEstudo.add(d.slice(0, 10));
   }
 
+  // Tempo estudado e dias de estudo consideram TODAS as respostas (refazer também é tempo de estudo).
   for (const t of tentativas) {
     const data = t.criada_em.slice(0, 10);
     diasComEstudo.add(data);
-
-    if (t.acertou) {
-      totalAcertos++;
-      if (t.chutou) acertosNoChute++;
-      else totalAcertosSemChute++;
-    }
-    if (t.chutou) totalChutes++;
 
     if (t.tempo_ms != null && t.tempo_ms > 0) {
       const clamped = Math.min(t.tempo_ms, TEMPO_MAX_QUESTAO_MS);
@@ -280,6 +280,17 @@ export function calcularDesempenho(entrada: EntradaDesempenho): ResumoDesempenho
         qtdTempoValido++;
       }
     }
+  }
+
+  // Acertos, chutes e contagens de questões consideram só a 1ª tentativa de cada questão por dia.
+  const tentativasUnicas = deduplicarTentativasPorDia(tentativas);
+  for (const t of tentativasUnicas) {
+    if (t.acertou) {
+      totalAcertos++;
+      if (t.chutou) acertosNoChute++;
+      else totalAcertosSemChute++;
+    }
+    if (t.chutou) totalChutes++;
 
     const at = aggTopico.get(t.topico_id) ?? {
       tentativas: 0,
@@ -314,7 +325,8 @@ export function calcularDesempenho(entrada: EntradaDesempenho): ResumoDesempenho
     topicosPorEstado[t.estado]++;
   }
   const projecao = projetarNota(disciplinas, dominiosParaProjecao);
-  const totalTentativas = tentativas.length;
+  const totalTentativas = tentativasUnicas.length;
+  const totalRespostasBrutas = tentativas.length;
   const temBaseProjecao = totalTentativas >= MIN_QUESTOES_PROJECAO;
 
   const pesoPorDisciplina = new Map<number, number>();
@@ -379,11 +391,12 @@ export function calcularDesempenho(entrada: EntradaDesempenho): ResumoDesempenho
     })
     .slice(0, 5);
 
-  const { semanas, tendencia } = calcularEvolucaoSemanal(tentativas, hoje, nSemanas);
+  const { semanas, tendencia } = calcularEvolucaoSemanal(tentativasUnicas, hoje, nSemanas);
 
   return {
     resumo: {
       totalTentativas,
+      totalRespostasBrutas,
       totalAcertos,
       totalAcertosSemChute,
       totalChutes,

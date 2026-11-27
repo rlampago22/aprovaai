@@ -20,6 +20,8 @@ interface Props {
 
 const formatarDecimal = (n: number) =>
   (Math.round(n * 10) / 10).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const formatarCompacto = (n: number) =>
+  (Math.round(n * 10) / 10).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
 
 export default function ProjecaoProva({
   projecao,
@@ -32,6 +34,10 @@ export default function ProjecaoProva({
   atingeMeta,
 }: Props) {
   const notaArredondada = Math.round(projecao.nota);
+  const totalQuestoesProva = disciplinas.reduce((s, d) => s + d.questoes_prova, 0) || 50;
+  const acertosEsperadosTotal = projecao.porDisciplina.reduce((s, d) => s + d.acertosEsperados, 0);
+  const minimoAcertosTotal = (NOTA_MINIMA_GERAL / 100) * totalQuestoesProva;
+  const metaAcertosTotal = (notaAlvo / 100) * totalQuestoesProva;
   const abaixoMinimo = disciplinas.filter((d) => d.comDados && !d.atingeMinimo);
   const faltamParaMeta = Math.max(0, notaAlvo - notaArredondada);
   const pctDesbloqueio = Math.min(100, Math.round((totalTentativas / MIN_QUESTOES_PROJECAO) * 100));
@@ -44,21 +50,35 @@ export default function ProjecaoProva({
             <Trophy aria-hidden="true" className="size-4 text-accent-texto" />
             Projeção de nota e mínimos da prova
           </h2>
-          <p className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="numero-grande text-5xl sm:text-6xl">
-              {temBaseProjecao ? notaArredondada : "—"}
-            </span>
-            <span className="text-xl font-bold text-muted">/ 100 pontos</span>
-          </p>
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-2">
+            <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="numero-grande text-5xl sm:text-6xl">
+                {temBaseProjecao ? notaArredondada : "—"}
+              </span>
+              <span className="text-xl font-bold text-muted">/ 100 pontos</span>
+            </p>
+            <p className="inline-flex items-baseline gap-1.5 rounded-xl bg-surface-2 px-3 py-1">
+              <span className="numero-grande text-2xl sm:text-3xl text-fg">
+                {temBaseProjecao ? `~${formatarCompacto(acertosEsperadosTotal)}` : "—"}
+              </span>
+              <span className="text-sm font-semibold text-muted">/ {totalQuestoesProva} questões</span>
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="rounded-xl bg-surface-2 px-3 py-1.5 font-semibold text-fg">
-            Mínimo geral: <span className="tabular-nums">{NOTA_MINIMA_GERAL}</span>
+            Mínimo geral:{" "}
+            <span className="tabular-nums">
+              {NOTA_MINIMA_GERAL} pts ({formatarCompacto(minimoAcertosTotal)}/{totalQuestoesProva})
+            </span>
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-xl bg-ambar-bg px-3 py-1.5 font-semibold text-ambar-texto">
             <Flag aria-hidden="true" className="size-3.5" />
-            Sua meta: <span className="tabular-nums">{notaAlvo}</span>
+            Sua meta:{" "}
+            <span className="tabular-nums">
+              {notaAlvo} pts ({formatarCompacto(metaAcertosTotal)}/{totalQuestoesProva})
+            </span>
           </span>
         </div>
       </div>
@@ -89,8 +109,9 @@ export default function ProjecaoProva({
       ) : (
         <div className="mt-4 space-y-3">
           <p className="text-sm text-muted">
-            Estimativa se a prova fosse hoje, usando seu domínio em cada tópico. Tópico ainda não praticado entra como
-            chute (25% em 4 alternativas).
+            Estimativa se a prova fosse hoje ({totalQuestoesProva} questões × 2 pontos = 100), usando seu domínio em
+            cada tópico. Tópico ainda não praticado entra como chute (25% em 4 alternativas) — a projeção sobe
+            conforme você cobre o edital.
           </p>
           {abaixoMinimo.length > 0 || !atingeMinimoGeral ? (
             <p role="status" className="flex items-start gap-3 rounded-xl bg-warn-bg p-3.5 text-sm font-semibold text-warn">
@@ -98,8 +119,9 @@ export default function ProjecaoProva({
               <span>
                 {!atingeMinimoGeral && (
                   <>
-                    A projeção ({notaArredondada} pontos) ainda está abaixo do mínimo geral de {NOTA_MINIMA_GERAL}{" "}
-                    pontos.{" "}
+                    A projeção ({notaArredondada} pontos · ~{formatarCompacto(acertosEsperadosTotal)}/
+                    {totalQuestoesProva} questões) ainda está abaixo do mínimo geral de {NOTA_MINIMA_GERAL} pontos (
+                    {formatarCompacto(minimoAcertosTotal)}/{totalQuestoesProva}).{" "}
                   </>
                 )}
                 {abaixoMinimo.length > 0 && (

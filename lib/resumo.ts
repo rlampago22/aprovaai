@@ -5,12 +5,64 @@ export interface SecaoResumo {
   markdown: string;
 }
 
+export interface ItemVF {
+  enunciado: string;
+  gabarito: "V" | "F";
+  explicacao: string;
+}
+
+export interface BlocoVF {
+  introducao?: string;
+  itens: ItemVF[];
+}
+
 const norm = (s: string) =>
   s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .trim();
+
+/**
+ * Extrai itens de Verdadeiro ou Falso da seção "Como a Fundatec cobra".
+ * Aceita formatos como: `1. "Afirmação..." → **V** (explicação).` ou `- Afirmação -> **F**. Explicação.`
+ */
+export function parsearItensVF(linhas: string[]): BlocoVF | null {
+  const itens: ItemVF[] = [];
+  const intro: string[] = [];
+
+  for (const raw of linhas) {
+    const l = raw.trim();
+    if (!l || /^-{3,}$/.test(l)) continue;
+    const semNum = l.replace(/^(?:\d+[.)]|[-*])\s+/, "");
+    const ehItemLista = semNum !== l;
+    if (!ehItemLista) {
+      if (itens.length === 0) intro.push(l);
+      continue;
+    }
+    const m = semNum.match(
+      /^(.+?)\s*(?:→|->)\s*\*\*(V|F|Verdadeiro|Falso)(?:\s*[^*]*)?\*\*\.?\s*(.*)$/i,
+    );
+    if (!m) continue;
+    let enunciado = m[1].trim();
+    // Remove aspas externas simples/duplas decorativas sem perder conteúdo
+    if (
+      (enunciado.startsWith('"') && enunciado.endsWith('"')) ||
+      (enunciado.startsWith("“") && enunciado.endsWith("”"))
+    ) {
+      enunciado = enunciado.slice(1, -1).trim();
+    }
+    const gab = m[2].toUpperCase().startsWith("V") ? "V" : "F";
+    const explicacao = m[3].replace(/^[\s.—–:-]+/, "").trim();
+    itens.push({ enunciado, gabarito: gab, explicacao });
+  }
+
+  if (itens.length < 2) return null;
+  return {
+    introducao: intro.length > 0 ? intro.join(" ") : undefined,
+    itens,
+  };
+}
 
 /** Seções "## ..." cujo título começa com um dos prefixos (sem acento/caixa), na ordem dos prefixos. */
 export function extrairSecoes(markdown: string, prefixos: string[]): SecaoResumo[] {

@@ -178,7 +178,7 @@ export function getTopicos(
       l = [];
       porTopico.set(tid, l);
     }
-    l.push({ acertou: t.acertou, chutou: t.chutou, criada_em: t.criada_em });
+    l.push({ questao_id: t.questao_id, acertou: t.acertou, chutou: t.chutou, criada_em: t.criada_em });
   }
 
   const conteudos = todosConteudos(catalogo, estado);
@@ -236,6 +236,15 @@ export interface FiltroQuestoes {
   modo?: "revisao" | "erradas" | "dificuldade" | "misto";
   n?: number;
   revisao?: number;
+  soOficiais?: boolean;
+}
+
+export function ehProvaOficial(origem: string): boolean {
+  return origem === "prova_oficial" || origem === "adaptada";
+}
+
+function pesoOrigem(origem: string): number {
+  return ehProvaOficial(origem) ? 0 : 1;
 }
 
 function embaralhar<T>(arr: T[]): T[] {
@@ -288,11 +297,14 @@ export function buscarQuestoes(
     return resto;
   };
 
-  const todas = todasQuestoes(catalogo, estado).map(enriquecer);
+  const todasBase = todasQuestoes(catalogo, estado).map(enriquecer);
+  const todas = f.soOficiais ? todasBase.filter((q) => ehProvaOficial(q.origem)) : todasBase;
 
   if (f.modo === "misto") {
     const embaralhadas = embaralhar(todas).sort(
-      (a, b) => (vistasPorQ.get(a.id) ?? 0) - (vistasPorQ.get(b.id) ?? 0),
+      (a, b) =>
+        (vistasPorQ.get(a.id) ?? 0) - (vistasPorQ.get(b.id) ?? 0) ||
+        pesoOrigem(a.origem) - pesoOrigem(b.origem),
     );
     const grupos = new Map<string, { peso: number; itens: typeof embaralhadas }>();
     for (const r of embaralhadas) {
@@ -352,7 +364,11 @@ export function buscarQuestoes(
       (a, b) => (difPorQ.get(b.id) ?? 0) - (difPorQ.get(a.id) ?? 0),
     );
   } else {
-    lista = embaralhar(lista).sort((a, b) => (vistasPorQ.get(a.id) ?? 0) - (vistasPorQ.get(b.id) ?? 0));
+    lista = embaralhar(lista).sort(
+      (a, b) =>
+        (vistasPorQ.get(a.id) ?? 0) - (vistasPorQ.get(b.id) ?? 0) ||
+        pesoOrigem(a.origem) - pesoOrigem(b.origem),
+    );
   }
 
   if (f.n && f.n > 0) lista = lista.slice(0, Math.floor(f.n));
@@ -384,6 +400,13 @@ export function registrarTentativa(
       t.criada_em.slice(0, 10) === hoje &&
       (!t.acertou || t.chutou),
   );
+  const jaAcertouHoje = estado.tentativas.some(
+    (t) =>
+      t.questao_id === args.questaoId &&
+      t.criada_em.slice(0, 10) === hoje &&
+      t.acertou &&
+      !t.chutou,
+  );
 
   const novaTentativa = {
     id: estado.nextIds.tentativa,
@@ -401,7 +424,7 @@ export function registrarTentativa(
   const antEstado: EstadoRevisao | null = ant
     ? { intervalo_dias: ant.intervalo_dias, facilidade: ant.facilidade }
     : null;
-  const novaRev = proximaRevisao(antEstado, acertou, args.chutou, hoje, ant?.proxima_em, errouHoje);
+  const novaRev = proximaRevisao(antEstado, acertou, args.chutou, hoje, ant?.proxima_em, errouHoje, jaAcertouHoje);
 
   const novoEstado: EstadoUsuario = {
     ...estado,
@@ -494,7 +517,7 @@ export function alternarEstudo(
 
   const minutos =
     minutosReais != null && Number.isFinite(minutosReais) && minutosReais > 0
-      ? Math.min(180, Math.max(1, Math.round(minutosReais)))
+      ? Math.min(300, Math.max(1, Math.round(minutosReais)))
       : minutosEstimados(c);
 
   return {
@@ -533,9 +556,14 @@ export function getPrimeiroDiaEstudo(estado: EstadoUsuario): string | null {
 
 export function getFeitoPorDia(estado: EstadoUsuario, de: string, ate: string): Record<string, number> {
   const res: Record<string, number> = {};
+  const vistos = new Set<string>();
   for (const t of estado.tentativas) {
     const d = t.criada_em.slice(0, 10);
-    if (d >= de && d <= ate) res[d] = (res[d] ?? 0) + 1;
+    if (d < de || d > ate) continue;
+    const ch = `${t.questao_id}|${d}`;
+    if (vistos.has(ch)) continue;
+    vistos.add(ch);
+    res[d] = (res[d] ?? 0) + 1;
   }
   return res;
 }
@@ -544,17 +572,19 @@ export function getAtividadeHoje(
   catalogo: CatalogoEstatico,
   estado: EstadoUsuario,
   hoje: string,
-): AtividadeHoje & { minutosEstudados: number } {
+): AtividadeHoje & { minutosEstudados: number; respostasHoje: number; refeitasMesmoDia: number } {
   const topicoPorQ = new Map(todasQuestoes(catalogo, estado).map((q) => [q.id, q.topico_id]));
   const conteudoPorId = new Map(todosConteudos(catalogo, estado).map((c) => [c.id, c]));
 
   let total = 0;
+  let respostasHoje = 0;
   let revisao = 0;
   let simulado = 0;
   let ms = 0;
 
   const porTopicoMap = new Map<number, number>();
   const ordemTopicos: number[] = [];
+  const vistasHoje = new Set<number>();
   const erradasSet = new Set<number>();
   const refeitasSet = new Set<number>();
   const topicosAntesHoje = new Set<number>();
@@ -568,14 +598,18 @@ export function getAtividadeHoje(
     }
     if (d !== hoje) continue;
 
-    total++;
-    if (t.origem === "revisao") revisao++;
-    if (t.origem === "simulado") simulado++;
+    respostasHoje++;
     if (t.tempo_ms != null) ms += t.tempo_ms;
 
-    if (tid != null) {
-      if (!porTopicoMap.has(tid)) ordemTopicos.push(tid);
-      porTopicoMap.set(tid, (porTopicoMap.get(tid) ?? 0) + 1);
+    if (!vistasHoje.has(t.questao_id)) {
+      vistasHoje.add(t.questao_id);
+      total++;
+      if (t.origem === "revisao") revisao++;
+      if (t.origem === "simulado") simulado++;
+      if (tid != null) {
+        if (!porTopicoMap.has(tid)) ordemTopicos.push(tid);
+        porTopicoMap.set(tid, (porTopicoMap.get(tid) ?? 0) + 1);
+      }
     }
 
     if (erradasSet.has(t.questao_id)) {
@@ -612,6 +646,8 @@ export function getAtividadeHoje(
 
   return {
     total,
+    respostasHoje,
+    refeitasMesmoDia: Math.max(0, respostasHoje - total),
     primeiraVezHoje,
     revisao,
     simulado,
@@ -650,6 +686,7 @@ export function getDesempenho(
     const top = topicoPorId.get(tid);
     if (!top) continue;
     tentativas.push({
+      questao_id: t.questao_id,
       topico_id: tid,
       disciplina_id: top.disciplina_id,
       acertou: t.acertou,
@@ -731,10 +768,10 @@ export interface SimuladoDetalhe {
 }
 
 export type CriarSimuladoInput =
-  | { tipo: "completo" }
-  | { tipo: "disciplina"; disciplinaId: number; n?: number }
-  | { tipo: "topicos"; topicoIds: number[]; n?: number }
-  | { tipo: "periodo"; dias: number; n?: number };
+  | { tipo: "completo"; soOficiais?: boolean }
+  | { tipo: "disciplina"; disciplinaId: number; n?: number; soOficiais?: boolean }
+  | { tipo: "topicos"; topicoIds: number[]; n?: number; soOficiais?: boolean }
+  | { tipo: "periodo"; dias: number; n?: number; soOficiais?: boolean };
 
 export function contarErradasNoPeriodo(
   estado: EstadoUsuario,
@@ -759,7 +796,8 @@ export function criarSimulado(
 ): { estado: EstadoUsuario; id: number; totalQuestoes: number } | null {
   const disciplinas = catalogo.disciplinas;
   const topicoPorId = new Map(catalogo.topicos.map((t) => [t.id, t]));
-  const qs = todasQuestoes(catalogo, estado);
+  const todasQs = todasQuestoes(catalogo, estado);
+  const qs = input.soOficiais ? todasQs.filter((q) => ehProvaOficial(q.origem)) : todasQs;
 
   const vistasPorQ = new Map<number, number>();
   for (const t of estado.tentativas) {
@@ -768,7 +806,11 @@ export function criarSimulado(
 
   const ordenarMenosVistas = (lista: QuestaoBase[]) =>
     embaralhar(lista)
-      .sort((a, b) => (vistasPorQ.get(a.id) ?? 0) - (vistasPorQ.get(b.id) ?? 0))
+      .sort(
+        (a, b) =>
+          (vistasPorQ.get(a.id) ?? 0) - (vistasPorQ.get(b.id) ?? 0) ||
+          pesoOrigem(a.origem) - pesoOrigem(b.origem),
+      )
       .map((q) => ({ id: q.id, topico_id: q.topico_id }));
 
   let questaoIds: number[] = [];
@@ -963,6 +1005,13 @@ export function finalizarSimulado(
         t.criada_em.slice(0, 10) === hoje &&
         (!t.acertou || t.chutou),
     );
+    const jaAcertouHoje = novasTentativas.some(
+      (t) =>
+        t.questao_id === q.id &&
+        t.criada_em.slice(0, 10) === hoje &&
+        t.acertou &&
+        !t.chutou,
+    );
     novasTentativas.push({
       id: proxTentId++,
       questao_id: q.id,
@@ -978,7 +1027,7 @@ export function finalizarSimulado(
     const antEstado: EstadoRevisao | null = ant
       ? { intervalo_dias: ant.intervalo_dias, facilidade: ant.facilidade }
       : null;
-    const nova = proximaRevisao(antEstado, acertou, chutou, hoje, ant?.proxima_em, errouHoje);
+    const nova = proximaRevisao(antEstado, acertou, chutou, hoje, ant?.proxima_em, errouHoje, jaAcertouHoje);
     novasRevisoes[q.id] = {
       questao_id: q.id,
       proxima_em: nova.proxima_em,

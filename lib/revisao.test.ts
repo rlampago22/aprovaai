@@ -42,4 +42,27 @@ describe("refazer no mesmo dia em que errou/chutou", () => {
     expect(noDiaSeguinte.proxima_em).toBe("2026-11-28");
     expect(noDiaSeguinte.facilidade).toBeCloseTo(2.35);
   });
+
+  it("repetir no mesmo dia uma questão já acertada hoje não empurra o intervalo para longe", () => {
+    const primeiroAcerto = proximaRevisao(null, true, false, "2026-11-26");
+    expect(primeiroAcerto).toEqual({ intervalo_dias: 3, facilidade: 2.55, proxima_em: "2026-11-29" });
+
+    const repetiuHoje = proximaRevisao(
+      primeiroAcerto,
+      true,
+      false,
+      "2026-11-26",
+      primeiroAcerto.proxima_em,
+      false,
+      true,
+    );
+    expect(repetiuHoje).toEqual(primeiroAcerto);
+  });
+
+  it("errar duas vezes no mesmo dia não derruba a facilidade duas vezes", () => {
+    const erro1 = proximaRevisao(null, false, false, "2026-11-26");
+    const erro2 = proximaRevisao(erro1, false, false, "2026-11-26", erro1.proxima_em, true);
+    expect(erro2.facilidade).toBeCloseTo(erro1.facilidade);
+    expect(erro2.proxima_em).toBe("2026-11-27");
+  });
 });

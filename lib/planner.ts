@@ -1,7 +1,7 @@
 // Planner do dia: função pura, sem acesso a banco ou relógio.
 // Gera o "roteiro" (passos tipados) cuja soma de questões acompanha a meta do dia.
 import { ritmoDeCobertura, type RitmoCobertura } from "./cobertura";
-import { diaDaSemana, diasEntre, type DiaSemana } from "./datas";
+import { diaDaSemana, diasEntre, formatarDuracao, type DiaSemana } from "./datas";
 import type { EstadoTopico } from "./dominio";
 import {
   FATOR_ENERGIA_BAIXA,
@@ -21,6 +21,11 @@ export const MINUTOS_BLOCO_MINIMO = 15;
 export const MIN_REVISOES_PARA_BLOCO = 3;
 export const MINUTOS_SIMULADO_COMPLETO = 210;
 export const QUESTOES_SIMULADO_COMPLETO = 50;
+export const MINUTOS_SIMULADO_SEMANAL = 75;
+export const QUESTOES_SIMULADO_SEMANAL = 25;
+/** Cobertura mínima (40% dos tópicos) e disciplinas iniciadas para liberar simulado completo na Cobertura. */
+export const COBERTURA_MINIMA_SIMULADO_COMPLETO = 0.4;
+export const MIN_DISCIPLINAS_SIMULADO_COMPLETO = 2;
 export const MINUTOS_FECHAMENTO = 5;
 /** Aquecimento: mínimo de questões e fração da meta do dia. */
 export const AQUECIMENTO_MINIMO = 8;
@@ -53,12 +58,15 @@ export interface TopicoPlanner {
   conteudos: ConteudoPlanner[];
 }
 
-/** O que já foi feito hoje (tentativas de hoje); usado para o estado de cada passo. */
+/** O que já foi feito hoje (questões únicas de hoje); usado para o estado de cada passo. */
 export interface AtividadeHoje {
+  /** Questões distintas respondidas hoje (base da meta do dia). */
   total: number;
-  /** Tentativas hoje com origem "revisao". */
+  /** Total bruto de respostas registradas hoje (inclui refeitas no mesmo dia). */
+  tentativasTotal?: number;
+  /** Questões distintas respondidas hoje com origem "revisao". */
   revisao: number;
-  /** Tentativas hoje com origem "simulado". */
+  /** Questões distintas respondidas hoje com origem "simulado". */
   simulado: number;
   /** Tópicos praticados hoje, na ordem da primeira tentativa. */
   porTopico: { topicoId: number; feitas: number }[];
@@ -140,6 +148,24 @@ export function faseDaProva(diasAteProva: number): Fase {
   if (diasAteProva > 45) return "cobertura";
   if (diasAteProva >= 15) return "consolidacao";
   return "reta_final";
+}
+
+/**
+ * Libera simulado completo (50 q. · 3h30) quando já saiu da fase de Cobertura
+ * ou quando já cobriu pelo menos 40% do edital em pelo menos 2 disciplinas.
+ */
+export function prontoParaSimuladoCompleto(
+  fase: Fase,
+  topicos: Pick<TopicoPlanner, "disciplina_id" | "estado">[],
+  totalDisciplinas: number,
+): boolean {
+  if (fase !== "cobertura") return true;
+  if (topicos.length === 0) return false;
+  const vistos = topicos.filter((t) => t.estado !== "nao_visto");
+  const cobertura = vistos.length / topicos.length;
+  const discsVistas = new Set(vistos.map((t) => t.disciplina_id)).size;
+  const minDiscs = Math.min(MIN_DISCIPLINAS_SIMULADO_COMPLETO, Math.max(1, totalDisciplinas));
+  return cobertura >= COBERTURA_MINIMA_SIMULADO_COMPLETO && discsVistas >= minDiscs;
 }
 
 export function pesoDisciplina(d: DisciplinaPlanner, todas: DisciplinaPlanner[]): number {
@@ -257,12 +283,23 @@ export function montarPlano(input: PlannerInput): Plano {
     minBloco = MINUTOS_BLOCO_MINIMO;
   }
 
-  const sugestaoSimulado =
-    diaDaSemana(input.hoje) === "dom" && minutos >= MINUTOS_SIMULADO_COMPLETO
+  const ehDomingoComTempo = diaDaSemana(input.hoje) === "dom" && minutos >= MINUTOS_SIMULADO_COMPLETO;
+  const vistosCount = input.topicos.filter((t) => t.estado !== "nao_visto").length;
+  const liberaSimuladoCompleto =
+    ehDomingoComTempo && prontoParaSimuladoCompleto(fase, input.topicos, input.disciplinas.length);
+  const usaSimuladoSemanal = ehDomingoComTempo && !liberaSimuladoCompleto && vistosCount > 0;
+
+  const sugestaoSimulado = liberaSimuladoCompleto
+    ? {
+        minutos: MINUTOS_SIMULADO_COMPLETO,
+        texto: "Domingo com tempo de sobra: que tal um simulado completo (3h30), como na prova?",
+        href: "/simulado",
+      }
+    : usaSimuladoSemanal
       ? {
-          minutos: MINUTOS_SIMULADO_COMPLETO,
-          texto: "Domingo com tempo de sobra: que tal um simulado completo (3h30), como na prova?",
-          href: "/simulado",
+          minutos: MINUTOS_SIMULADO_SEMANAL,
+          texto: "Domingo com tempo: revise em simulado o que já estudou e avance em tópicos novos.",
+          href: `/simulado?modo=vistos&n=${QUESTOES_SIMULADO_SEMANAL}`,
         }
       : null;
 
@@ -297,8 +334,8 @@ export function montarPlano(input: PlannerInput): Plano {
     });
   }
 
-  // Domingo com tempo: simulado completo no lugar dos passos de estudo.
-  if (sugestaoSimulado) {
+  // Domingo com tempo e base suficiente: simulado completo no lugar dos passos de estudo.
+  if (liberaSimuladoCompleto) {
     add({
       tipo: "simulado",
       titulo: "Simulado completo (3h30)",
@@ -312,9 +349,21 @@ export function montarPlano(input: PlannerInput): Plano {
     return { fase, diasAteProva, minutosEfetivos: minutos, energia, metaQuestoes: meta, passos, sugestaoSimulado, cobertura, filaRevisao };
   }
 
-  // Reta final: um simulado curto, se sobrar espaço
+  // Simulado semanal (domingo no início da Cobertura) ou simulado curto (reta final)
   let qSimulado = 0;
-  if (fase === "reta_final" && nPassos - passos.length >= 2) {
+  if (usaSimuladoSemanal) {
+    qSimulado = QUESTOES_SIMULADO_SEMANAL;
+    add({
+      tipo: "simulado",
+      titulo: "Simulado da semana (tópicos vistos)",
+      descricao: `${QUESTOES_SIMULADO_SEMANAL} questões cronometradas só do que você já estudou, sem consultar`,
+      motivo: "Consolida o que você viu sem chutar matérias ainda não estudadas; o completo entra após 40% do edital",
+      minutos: MINUTOS_SIMULADO_SEMANAL,
+      questoes: QUESTOES_SIMULADO_SEMANAL,
+      feitas: ativ.simulado,
+      href: `/simulado?modo=vistos&n=${QUESTOES_SIMULADO_SEMANAL}`,
+    });
+  } else if (fase === "reta_final" && nPassos - passos.length >= 2) {
     qSimulado = Math.max(1, Math.floor(minBloco / MINUTOS_POR_QUESTAO));
     add({
       tipo: "simulado",
@@ -329,10 +378,11 @@ export function montarPlano(input: PlannerInput): Plano {
   }
 
   // Fechamento (5 min): refazer o que errou hoje. Só com tempo para 3+ passos.
+  // Como refazer no mesmo dia não conta na meta de questões únicas, não subtrai cota dos passos de estudo.
   const temFechamento = nPassos >= 3;
-  const vagasEstudo = Math.max(0, nPassos - passos.length - (temFechamento ? 1 : 0));
-  // Reserva fixa de 3 questões na meta do dia para o fechamento não encolher os passos de estudo conforme surgem erros.
-  const qReservaFechamento = temFechamento ? 3 : 0;
+  const vagasEstudoBrutas = Math.max(0, nPassos - passos.length - (temFechamento ? 1 : 0));
+  // No domingo com simulado semanal, limita a 2 tópicos novos para caber no tempo junto com o simulado.
+  const vagasEstudo = usaSimuladoSemanal ? Math.min(2, vagasEstudoBrutas) : vagasEstudoBrutas;
 
   // Tópicos: os já trabalhados hoje (questões ou conteúdo) ficam no roteiro (estabilidade); depois, por prioridade.
   const porId = new Map(input.topicos.map((t) => [t.id, t]));
@@ -384,7 +434,7 @@ export function montarPlano(input: PlannerInput): Plano {
   ];
 
   // Questões dos passos de estudo: o que sobra da meta depois dos outros passos.
-  const outras = qAquecimento + qSimulado + qReservaFechamento;
+  const outras = qAquecimento + qSimulado;
   const paraEstudo = Math.max(meta - outras, escolhidos.length);
   const tetos = escolhidos.map(({ t }) =>
     idsExpresso.has(t.id) ? Math.min(QUESTOES_RESUMO_EXPRESSO, t.n_questoes) : t.n_questoes,
@@ -431,14 +481,20 @@ export function montarPlano(input: PlannerInput): Plano {
     // Trilha do tópico: resumo → vídeo opcional → questões. Só para tópico não visto/fraco (ou já estudado hoje).
     const hojeC = conteudoHoje.get(t.id);
     const precisaTeoria = t.estado === "nao_visto" || t.estado === "fraco" || !!hojeC;
-    const video = t.conteudos.find((c) => c.tipo === "video");
+    const videosTopico = t.conteudos.filter((c) => c.tipo === "video");
+    // Prefere o vídeo mais curto com duração conhecida para não assustar com aulas de 2h+ quando há vídeo objetivo.
+    const video =
+      [...videosTopico].sort(
+        (a, b) => (a.minutos ?? Number.POSITIVE_INFINITY) - (b.minutos ?? Number.POSITIVE_INFINITY),
+      )[0] ?? videosTopico[0];
     const mostraResumo = precisaTeoria && t.conteudos.some((c) => c.tipo === "teoria");
     const mostraVideo = precisaTeoria && !!video;
-    const minVideo = mostraVideo ? Math.max(3, video!.minutos ?? MINUTOS_VIDEO_PADRAO) : 0;
-    const minTeoria = (mostraResumo ? MINUTOS_RESUMO : 0) + minVideo;
+    const minVideo = mostraVideo ? Math.max(1, video!.minutos ?? MINUTOS_VIDEO_PADRAO) : 0;
+    // Quando há resumo, o vídeo é apoio opcional e não infla o tempo estimado do passo.
+    const minTeoria = mostraResumo ? MINUTOS_RESUMO : minVideo;
     const partes: string[] = [];
     if (mostraResumo) partes.push("Ler resumo");
-    if (mostraVideo) partes.push(`${mostraResumo ? "vídeo opcional" : "Ver vídeo"} (${minVideo} min)`);
+    if (mostraVideo) partes.push(`${mostraResumo ? "vídeo opcional" : "Ver vídeo"} (${formatarDuracao(minVideo)})`);
     if (q > 0) partes.push(plural(q, "questão", "questões"));
     const descricao = partes.length > 0 ? partes.join(" → ") : "Revisar o tópico no mapa do edital";
 
@@ -485,10 +541,7 @@ export function montarPlano(input: PlannerInput): Plano {
   const faltaMeta = meta - (outras + somaEstudo);
   if (faltaMeta > 0) {
     const feitasEmEstudo = escolhidos.reduce((s, e, i) => s + Math.min(e.feitas, qs[i]), 0);
-    const feitasMisto = Math.max(
-      0,
-      ativ.total - ativ.revisao - ativ.simulado - feitasEmEstudo - Math.min(ativ.refeitasHoje, qReservaFechamento),
-    );
+    const feitasMisto = Math.max(0, ativ.total - ativ.revisao - ativ.simulado - feitasEmEstudo);
     const nMisto = Math.max(1, faltaMeta - feitasMisto);
     // Fila bola-de-neve: metade das mistas vem da fila de revisão (limitada ao que sobra dela).
     const kRevisao = filaRevisao
@@ -511,7 +564,7 @@ export function montarPlano(input: PlannerInput): Plano {
 
   if (temFechamento) {
     const e = ativ.erradasHoje;
-    const qFechamentoPasso = e > 0 ? e : qReservaFechamento;
+    const qFechamentoPasso = e > 0 ? e : 0;
     const faltamRefazer = Math.max(0, e - ativ.refeitasHoje);
     const descricaoFechamento =
       e <= 0
@@ -529,7 +582,7 @@ export function montarPlano(input: PlannerInput): Plano {
       minutos: MINUTOS_FECHAMENTO,
       questoes: qFechamentoPasso,
       feitas: ativ.refeitasHoje,
-      href: `/praticar?modo=erradas&n=${Math.max(1, qFechamentoPasso)}`,
+      href: `/praticar?modo=erradas&n=${Math.max(1, e || 3)}`,
     });
     // O fechamento só está "feito" quando havia erro e tudo foi refeito.
     const ultimo = passos[passos.length - 1];

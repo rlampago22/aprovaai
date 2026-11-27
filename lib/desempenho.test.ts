@@ -179,6 +179,32 @@ describe("calcularDesempenho — projeção, mínimos e foco", () => {
     // Mesmo domínio (0.4), Específicos (50%) > Legislação (30%) > Português (20%)
     expect(r.focoAgora.map((t) => t.id)).toEqual([3, 2, 1]);
   });
+
+  it("repetições no mesmo dia não inflam acertos nem contagem, mas preservam o tempo estudado", () => {
+    const tentativas: TentativaDesempenho[] = [
+      // Dia 24: errou Q101, depois refez 2x acertando
+      { questao_id: 101, topico_id: 3, disciplina_id: 3, acertou: false, chutou: false, tempo_ms: 60_000, criada_em: "2026-11-24 18:00:00" },
+      { questao_id: 101, topico_id: 3, disciplina_id: 3, acertou: true, chutou: false, tempo_ms: 60_000, criada_em: "2026-11-24 18:10:00" },
+      { questao_id: 101, topico_id: 3, disciplina_id: 3, acertou: true, chutou: false, tempo_ms: 60_000, criada_em: "2026-11-24 18:15:00" },
+      // Dia 25: acertou Q101 na revisão do dia seguinte -> conta como nova questão do dia 25
+      { questao_id: 101, topico_id: 3, disciplina_id: 3, acertou: true, chutou: false, tempo_ms: 60_000, criada_em: "2026-11-25 18:00:00" },
+    ];
+    const r = calcularDesempenho({
+      hoje: "2026-11-25",
+      disciplinas: DISCIPLINAS,
+      topicos: TOPICOS_BASE,
+      tentativas,
+      notaAlvo: 80,
+      minutosConteudoTotal: 0,
+      diasEstudados7: 2,
+    });
+    expect(r.resumo.totalTentativas).toBe(2);
+    expect(r.resumo.totalRespostasBrutas).toBe(4);
+    expect(r.resumo.totalAcertos).toBe(1);
+    expect(r.resumo.taxaAcerto).toBeCloseTo(0.5, 5);
+    // Tempo total soma todas as 4 respostas (4 min)
+    expect(r.resumo.minutosEstudadosTotal).toBe(4);
+  });
 });
 
 describe("calcularEvolucaoSemanal", () => {

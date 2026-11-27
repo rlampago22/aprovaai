@@ -11,6 +11,7 @@ interface DisciplinaOpt {
   nome: string;
   questoes_prova: number;
   totalBanco: number;
+  totalOficiais?: number;
 }
 
 interface TopicoOpt {
@@ -38,6 +39,7 @@ export default function CriadorSimulado({ disciplinas, topicos, erradasPorPeriod
   const [qtdTop, setQtdTop] = useState<number>(15);
   const [diasPeriodo, setDiasPeriodo] = useState<number>(7);
   const [qtdPeriodo, setQtdPeriodo] = useState<number>(20);
+  const [soOficiais, setSoOficiais] = useState<boolean>(false);
 
   const qtdErrosNoPeriodo = erradasPorPeriodo.find((e) => e.dias === diasPeriodo)?.quantidade ?? 0;
 
@@ -57,34 +59,45 @@ export default function CriadorSimulado({ disciplinas, topicos, erradasPorPeriod
         </p>
       </div>
 
-      {/* Abas */}
-      <div role="tablist" aria-label="Tipo de simulado personalizado" className="flex flex-wrap gap-2">
-        {(
-          [
-            ["disciplina", "Por disciplina", Layers],
-            ["topicos", "Por tópicos", BookMarked],
-            ["periodo", "Erros recentes", RotateCcw],
-          ] as [Aba, string, typeof Layers][]
-        ).map(([id, rotulo, Icone]) => {
-          const ativo = aba === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={ativo}
-              onClick={() => setAba(id)}
-              className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors ${
-                ativo
-                  ? "border-accent bg-accent text-accent-fg"
-                  : "border-borda bg-bg text-fg hover:bg-surface-2"
-              }`}
-            >
-              <Icone aria-hidden="true" className="size-4" />
-              {rotulo}
-            </button>
-          );
-        })}
+      {/* Abas + filtro de provas oficiais */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div role="tablist" aria-label="Tipo de simulado personalizado" className="flex flex-wrap gap-2">
+          {(
+            [
+              ["disciplina", "Por disciplina", Layers],
+              ["topicos", "Por tópicos", BookMarked],
+              ["periodo", "Erros recentes", RotateCcw],
+            ] as [Aba, string, typeof Layers][]
+          ).map(([id, rotulo, Icone]) => {
+            const ativo = aba === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={ativo}
+                onClick={() => setAba(id)}
+                className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors ${
+                  ativo
+                    ? "border-accent bg-accent text-accent-fg"
+                    : "border-borda bg-bg text-fg hover:bg-surface-2"
+                }`}
+              >
+                <Icone aria-hidden="true" className="size-4" />
+                {rotulo}
+              </button>
+            );
+          })}
+        </div>
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-borda bg-bg px-3 py-2 text-xs font-semibold text-fg">
+          <input
+            type="checkbox"
+            checked={soOficiais}
+            onChange={(e) => setSoOficiais(e.target.checked)}
+            className="size-4 accent-[var(--accent)]"
+          />
+          Só provas oficiais (Fundatec)
+        </label>
       </div>
 
       {/* Aba 1: Por disciplina */}
@@ -92,7 +105,7 @@ export default function CriadorSimulado({ disciplinas, topicos, erradasPorPeriod
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onCriar({ tipo: "disciplina", disciplinaId: discId, n: qtdDisc });
+            onCriar({ tipo: "disciplina", disciplinaId: discId, n: qtdDisc, soOficiais });
           }}
           className="space-y-4"
         >
@@ -116,7 +129,8 @@ export default function CriadorSimulado({ disciplinas, topicos, erradasPorPeriod
                   >
                     <span className="chip">{nomeCurtoDisciplina(d.nome)}</span>
                     <p className="mt-2 text-xs text-muted">
-                      {d.totalBanco} questões no banco · {d.questoes_prova} na prova
+                      {d.totalBanco} questões
+                      {d.totalOficiais != null ? ` (${d.totalOficiais} oficiais)` : ""} · {d.questoes_prova} na prova
                     </p>
                   </button>
                 );
@@ -165,7 +179,7 @@ export default function CriadorSimulado({ disciplinas, topicos, erradasPorPeriod
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onCriar({ tipo: "topicos", topicoIds: topicosSel, n: qtdTop });
+            onCriar({ tipo: "topicos", topicoIds: topicosSel, n: qtdTop, soOficiais });
           }}
           className="space-y-4"
         >
@@ -267,7 +281,7 @@ export default function CriadorSimulado({ disciplinas, topicos, erradasPorPeriod
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onCriar({ tipo: "periodo", dias: diasPeriodo, n: qtdPeriodo });
+            onCriar({ tipo: "periodo", dias: diasPeriodo, n: qtdPeriodo, soOficiais });
           }}
           className="space-y-4"
         >

@@ -13,6 +13,7 @@ export interface ConfigSimulado {
   disciplinaId?: number;
   topicoIds?: number[];
   diasErros?: number;
+  somenteOficiais?: boolean;
 }
 
 export interface CandidataSimulado {

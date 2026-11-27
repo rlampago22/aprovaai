@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
-import { CircleAlert, Layers, RotateCcw, Shuffle, SquareX } from "lucide-react";
+import { Award, CircleAlert, Layers, RotateCcw, Shuffle, SquareX } from "lucide-react";
 import Player from "@/components/Player";
 import { CarregandoApp, useStore } from "@/components/StoreProvider";
 import { classeDisciplina, nomeCurtoDisciplina } from "@/lib/disciplinas-ui";
@@ -24,13 +24,14 @@ function PraticarInterno() {
   const disciplina = num(sp.get("disciplina"));
   const n = num(sp.get("n"));
   const revisao = num(sp.get("revisao"));
+  const soOficiais = sp.get("oficiais") === "1";
   const modoBruto = sp.get("modo");
   const modo =
     modoBruto === "revisao" || modoBruto === "erradas" || modoBruto === "dificuldade" || modoBruto === "misto"
       ? modoBruto
       : undefined;
 
-  const chave = `${topico ?? ""}-${disciplina ?? ""}-${modo ?? ""}-${n ?? ""}-${revisao ?? ""}`;
+  const chave = `${topico ?? ""}-${disciplina ?? ""}-${modo ?? ""}-${n ?? ""}-${revisao ?? ""}-${soOficiais ? "1" : "0"}`;
 
   // Congela a lista de questões por filtro para não embaralhar durante a sessão ao responder.
   const questoes = useMemo(() => {
@@ -39,8 +40,9 @@ function PraticarInterno() {
       topico,
       disciplina,
       modo,
-      n: n ?? (topico || disciplina || modo ? undefined : 10),
+      n: n ?? (topico || disciplina || modo ? undefined : soOficiais ? undefined : 10),
       revisao: modo === "misto" ? revisao : undefined,
+      soOficiais,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- busca nova lista apenas ao mudar de filtro ou concluir carga inicial
   }, [pronto, chave]);
@@ -50,7 +52,9 @@ function PraticarInterno() {
   const disciplinas = getDisciplinas(catalogo);
   const { semana, atividade } = getContextoHoje(catalogo, estado);
 
-  let descricao = "Questões variadas";
+  let descricao = soOficiais
+    ? "Apenas provas oficiais da Fundatec (menos vistas primeiro)"
+    : "Questões variadas (provas oficiais da Fundatec primeiro)";
   if (modo === "revisao") descricao = "Revisão das questões vencidas";
   else if (modo === "erradas") descricao = "Questões ainda pendentes (última resposta foi erro ou chute)";
   else if (modo === "dificuldade")
@@ -61,15 +65,27 @@ function PraticarInterno() {
       : "Questões mistas: todas as disciplinas, as de maior peso primeiro";
   else if (topico) descricao = `Tópico: ${getTopicos(catalogo, estado).find((t) => t.id === topico)?.titulo_curto ?? topico}`;
   else if (disciplina) descricao = `Disciplina: ${disciplinas.find((d) => d.id === disciplina)?.nome ?? disciplina}`;
+  if (soOficiais && (modo || topico || disciplina)) {
+    descricao = `${descricao} · só provas oficiais da Fundatec`;
+  }
+
+  const comOficiais = (href: string) => {
+    if (!soOficiais) return href;
+    return href.includes("?") ? `${href}&oficiais=1` : `${href}?oficiais=1`;
+  };
+  const paramsToggle = new URLSearchParams(sp.toString());
+  if (soOficiais) paramsToggle.delete("oficiais");
+  else paramsToggle.set("oficiais", "1");
+  const hrefToggleOficiais = paramsToggle.toString() ? `/praticar?${paramsToggle.toString()}` : "/praticar";
 
   const filtros = [
-    { href: "/praticar", rotulo: "Variadas", icone: Layers, classe: "" },
-    { href: "/praticar?modo=revisao", rotulo: "Revisão do dia", icone: RotateCcw, classe: "" },
-    { href: "/praticar?modo=misto&n=10", rotulo: "Mistas", icone: Shuffle, classe: "" },
-    { href: "/praticar?modo=erradas", rotulo: "Erradas", icone: SquareX, classe: "" },
-    { href: "/praticar?modo=dificuldade", rotulo: "Com dificuldade", icone: CircleAlert, classe: "" },
+    { href: comOficiais("/praticar"), rotulo: "Variadas", icone: Layers, classe: "" },
+    { href: comOficiais("/praticar?modo=revisao"), rotulo: "Revisão do dia", icone: RotateCcw, classe: "" },
+    { href: comOficiais("/praticar?modo=misto&n=10"), rotulo: "Mistas", icone: Shuffle, classe: "" },
+    { href: comOficiais("/praticar?modo=erradas"), rotulo: "Erradas", icone: SquareX, classe: "" },
+    { href: comOficiais("/praticar?modo=dificuldade"), rotulo: "Com dificuldade", icone: CircleAlert, classe: "" },
     ...disciplinas.map((d) => ({
-      href: `/praticar?disciplina=${d.id}`,
+      href: comOficiais(`/praticar?disciplina=${d.id}`),
       rotulo: nomeCurtoDisciplina(d.nome),
       icone: null,
       classe: classeDisciplina(d.nome),
@@ -78,9 +94,19 @@ function PraticarInterno() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-extrabold sm:text-3xl">Praticar</h1>
-        <p className="text-muted">{descricao}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold sm:text-3xl">Praticar</h1>
+          <p className="text-muted">{descricao}</p>
+        </div>
+        <Link
+          href={hrefToggleOficiais}
+          aria-pressed={soOficiais}
+          className={`btn text-sm ${soOficiais ? "border-accent bg-accent text-accent-fg" : ""}`}
+        >
+          <Award aria-hidden="true" className="size-4" />
+          {soOficiais ? "Só provas oficiais (ativo)" : "Só provas oficiais"}
+        </Link>
       </div>
       <nav aria-label="Filtros de prática">
         <ul className="flex flex-wrap gap-2">
