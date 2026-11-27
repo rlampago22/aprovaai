@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, CalendarCheck, Check, CircleCheck, CircleX, RotateCcw, Timer, X } from "lucide-react";
+import { ArrowRight, CalendarCheck, Check, CircleCheck, CircleX, RotateCcw, Scissors, Timer, X } from "lucide-react";
 import { useStore } from "@/components/StoreProvider";
 import { classeDisciplina, nomeCurtoDisciplina } from "@/lib/disciplinas-ui";
 import { registrarTentativa, type Questao } from "@/lib/queries";
@@ -34,6 +34,7 @@ export default function Player({ questoes: questoesIniciais, origem, metaHoje, f
   const [feitasAntes] = useState(feitasHoje);
   const [idx, setIdx] = useState(0);
   const [escolha, setEscolha] = useState<string | null>(null);
+  const [eliminadas, setEliminadas] = useState<string[]>([]);
   const [chutei, setChutei] = useState(false);
   const [resultado, setResultado] = useState<{ acertou: boolean; correta: string } | null>(null);
   const [acertos, setAcertos] = useState(0);
@@ -76,10 +77,28 @@ export default function Player({ questoes: questoesIniciais, origem, metaHoje, f
     }
   }, [q, escolha, resultado, catalogo, atualizarEstado, chutei, origem]);
 
+  const selecionar = useCallback((letra: string) => {
+    setEscolha(letra);
+    setEliminadas((prev) => (prev.includes(letra) ? prev.filter((l) => l !== letra) : prev));
+  }, []);
+
+  const alternarEliminada = useCallback(
+    (letra: string) => {
+      if (resultado) return;
+      setEliminadas((prev) => {
+        if (prev.includes(letra)) return prev.filter((l) => l !== letra);
+        if (escolha === letra) setEscolha(null);
+        return [...prev, letra];
+      });
+    },
+    [resultado, escolha],
+  );
+
   const proxima = useCallback(() => {
     setIdx((i) => i + 1);
     setSegundos(0);
     setEscolha(null);
+    setEliminadas([]);
     setChutei(false);
     setResultado(null);
     setErro(null);
@@ -103,7 +122,7 @@ export default function Player({ questoes: questoesIniciais, origem, metaHoje, f
         const i = pos >= 0 ? pos : posLetra;
         if (i >= 0 && i < q.alternativas.length) {
           e.preventDefault();
-          setEscolha(q.alternativas[i].letra);
+          selecionar(q.alternativas[i].letra);
           return;
         }
         if (k === "x") {
@@ -120,7 +139,7 @@ export default function Player({ questoes: questoesIniciais, origem, metaHoje, f
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [q, acabou, resultado, confirmar, proxima]);
+  }, [q, acabou, resultado, selecionar, confirmar, proxima]);
 
   if (questoes.length === 0) {
     return (
@@ -244,6 +263,7 @@ export default function Player({ questoes: questoesIniciais, origem, metaHoje, f
           <legend className="sr-only">Alternativas</legend>
           {q.alternativas.map((a, i) => {
             const marcada = escolha === a.letra;
+            const eliminada = !resultado && eliminadas.includes(a.letra);
             const ehCorreta = !!resultado && a.letra === resultado.correta;
             const ehErrada = !!resultado && marcada && !resultado.acertou;
             const estilo = ehCorreta
@@ -252,42 +272,76 @@ export default function Player({ questoes: questoesIniciais, origem, metaHoje, f
                 ? "border-bad bg-bad-bg"
                 : marcada
                   ? "border-accent bg-accent-suave"
-                  : "border-borda-forte bg-surface hover:border-accent-texto hover:bg-surface-2";
+                  : eliminada
+                    ? "border-borda bg-surface-2/60 opacity-60 hover:opacity-85"
+                    : "border-borda-forte bg-surface hover:border-accent-texto hover:bg-surface-2";
             const selo = ehCorreta
               ? "bg-ok text-surface"
               : ehErrada
                 ? "bg-bad text-surface"
                 : marcada
                   ? "bg-accent text-accent-fg"
-                  : "bg-surface-2 text-fg";
+                  : eliminada
+                    ? "bg-surface text-muted line-through"
+                    : "bg-surface-2 text-fg";
             return (
               <div key={a.letra}>
-                <label
-                  className={`flex min-h-14 cursor-pointer items-start gap-3 rounded-2xl border-2 p-3.5 has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent-texto ${estilo} ${resultado ? "cursor-default" : ""}`}
+                <div
+                  onContextMenu={(e) => {
+                    if (!resultado) {
+                      e.preventDefault();
+                      alternarEliminada(a.letra);
+                    }
+                  }}
+                  className={`flex items-start rounded-2xl border-2 has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent-texto ${estilo}`}
                 >
-                  <input
-                    type="radio"
-                    name="alternativa"
-                    value={a.letra}
-                    checked={marcada}
-                    onChange={() => setEscolha(a.letra)}
-                    className="sr-only"
-                  />
-                  <span
-                    aria-hidden="true"
-                    className={`titulo inline-flex size-9 shrink-0 items-center justify-center rounded-full text-base font-extrabold ${selo}`}
+                  <label
+                    className={`flex min-h-14 flex-1 cursor-pointer items-start gap-3 p-3.5 ${resultado ? "cursor-default" : ""}`}
                   >
-                    {ehCorreta ? <Check className="size-5" /> : ehErrada ? <X className="size-5" /> : a.letra}
-                  </span>
-                  <span className="pt-1">
-                    <span className="sr-only">
-                      Alternativa {a.letra} (tecla {i + 1}):{" "}
+                    <input
+                      type="radio"
+                      name="alternativa"
+                      value={a.letra}
+                      checked={marcada}
+                      onChange={() => selecionar(a.letra)}
+                      className="sr-only"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className={`titulo inline-flex size-9 shrink-0 items-center justify-center rounded-full text-base font-extrabold ${selo}`}
+                    >
+                      {ehCorreta ? <Check className="size-5" /> : ehErrada ? <X className="size-5" /> : a.letra}
                     </span>
-                    {a.texto}
-                    {ehCorreta && <strong className="ml-2 text-ok">Correta</strong>}
-                    {ehErrada && <strong className="ml-2 text-bad">Sua resposta</strong>}
-                  </span>
-                </label>
+                    <span className={`pt-1 ${eliminada ? "text-muted line-through" : ""}`}>
+                      <span className="sr-only">
+                        Alternativa {a.letra} (tecla {i + 1}):{" "}
+                      </span>
+                      {a.texto}
+                      {ehCorreta && <strong className="ml-2 text-ok">Correta</strong>}
+                      {ehErrada && <strong className="ml-2 text-bad">Sua resposta</strong>}
+                    </span>
+                  </label>
+                  {!resultado && (
+                    <button
+                      type="button"
+                      onClick={() => alternarEliminada(a.letra)}
+                      aria-pressed={eliminada}
+                      aria-label={eliminada ? `Restaurar alternativa ${a.letra}` : `Riscar alternativa ${a.letra}`}
+                      title={
+                        eliminada
+                          ? "Restaurar alternativa (ou clique direito)"
+                          : "Riscar alternativa eliminada (ou clique direito)"
+                      }
+                      className={`mr-2 mt-2.5 inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl transition-colors ${
+                        eliminada
+                          ? "bg-surface text-fg ring-1 ring-borda-forte"
+                          : "text-muted hover:bg-surface-2 hover:text-fg"
+                      }`}
+                    >
+                      <Scissors aria-hidden="true" className="size-4" />
+                    </button>
+                  )}
+                </div>
                 {resultado && <p className="mt-1.5 pl-14 pr-2 text-sm text-muted">{a.explicacao}</p>}
               </div>
             );
@@ -336,7 +390,7 @@ export default function Player({ questoes: questoesIniciais, origem, metaHoje, f
           )}
         </div>
         <p className="hidden text-sm text-muted sm:block">
-          Atalhos: 1–4 ou A–D marcam a alternativa, X marca &quot;chutei&quot;, Enter confirma e avança.
+          Atalhos: 1–4 ou A–D marcam a alternativa, X marca &quot;chutei&quot;, Enter confirma e avança, clique direito ou tesoura riscam uma alternativa.
         </p>
       </article>
     </div>

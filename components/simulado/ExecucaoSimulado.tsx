@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Flag,
+  Scissors,
   Send,
   Timer,
   Trash2,
@@ -28,6 +29,7 @@ interface RascunhoQuestao {
   chutou: boolean;
   marcada: boolean;
   tempoMs: number;
+  eliminadas?: string[];
 }
 
 interface RascunhoSalvo {
@@ -128,6 +130,7 @@ export default function ExecucaoSimulado({ simuladoId, titulo, tempoLimiteMin, q
 
   const q = questoes[idx];
   const atual = q ? (itens[q.id] ?? VAZIO) : VAZIO;
+  const eliminadasAtual = atual.eliminadas ?? [];
 
   const atualizarAtual = useCallback(
     (patch: Partial<RascunhoQuestao>) => {
@@ -135,6 +138,48 @@ export default function ExecucaoSimulado({ simuladoId, titulo, tempoLimiteMin, q
       setItens((prev) => {
         const cur = prev[q.id] ?? VAZIO;
         return { ...prev, [q.id]: { ...cur, ...patch } };
+      });
+    },
+    [q],
+  );
+
+  const selecionarAlternativa = useCallback(
+    (letra: string) => {
+      if (!q) return;
+      setItens((prev) => {
+        const cur = prev[q.id] ?? VAZIO;
+        const elims = cur.eliminadas ?? [];
+        return {
+          ...prev,
+          [q.id]: {
+            ...cur,
+            resposta: letra,
+            eliminadas: elims.includes(letra) ? elims.filter((l) => l !== letra) : cur.eliminadas,
+          },
+        };
+      });
+    },
+    [q],
+  );
+
+  const alternarEliminada = useCallback(
+    (letra: string) => {
+      if (!q) return;
+      setItens((prev) => {
+        const cur = prev[q.id] ?? VAZIO;
+        const elims = cur.eliminadas ?? [];
+        const ja = elims.includes(letra);
+        if (ja) {
+          return { ...prev, [q.id]: { ...cur, eliminadas: elims.filter((l) => l !== letra) } };
+        }
+        return {
+          ...prev,
+          [q.id]: {
+            ...cur,
+            eliminadas: [...elims, letra],
+            ...(cur.resposta === letra ? { resposta: null, chutou: false } : {}),
+          },
+        };
       });
     },
     [q],
@@ -161,7 +206,7 @@ export default function ExecucaoSimulado({ simuladoId, titulo, tempoLimiteMin, q
       const i = pos >= 0 ? pos : posLetra;
       if (i >= 0 && i < q.alternativas.length) {
         e.preventDefault();
-        atualizarAtual({ resposta: q.alternativas[i].letra });
+        selecionarAlternativa(q.alternativas[i].letra);
         return;
       }
       if (k === "x") {
@@ -184,7 +229,7 @@ export default function ExecucaoSimulado({ simuladoId, titulo, tempoLimiteMin, q
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [q, confirmandoEntrega, atual.chutou, atual.marcada, atualizarAtual, irPara, idx]);
+  }, [q, confirmandoEntrega, atual.chutou, atual.marcada, atualizarAtual, selecionarAlternativa, irPara, idx]);
 
   const respondidas = questoes.filter((item) => !!itens[item.id]?.resposta).length;
   const emBranco = questoes.length - respondidas;
@@ -414,38 +459,67 @@ export default function ExecucaoSimulado({ simuladoId, titulo, tempoLimiteMin, q
           <legend className="sr-only">Alternativas</legend>
           {q.alternativas.map((a, i) => {
             const marcada = atual.resposta === a.letra;
+            const eliminada = eliminadasAtual.includes(a.letra);
+            const estilo = marcada
+              ? "border-accent bg-accent-suave"
+              : eliminada
+                ? "border-borda bg-surface-2/60 opacity-60 hover:opacity-85"
+                : "border-borda-forte bg-surface hover:border-accent-texto hover:bg-surface-2";
+            const selo = marcada
+              ? "bg-accent text-accent-fg"
+              : eliminada
+                ? "bg-surface text-muted line-through"
+                : "bg-surface-2 text-fg";
             return (
-              <label
+              <div
                 key={a.letra}
-                className={`flex min-h-14 cursor-pointer items-start gap-3 rounded-2xl border-2 p-3.5 has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent-texto ${
-                  marcada
-                    ? "border-accent bg-accent-suave"
-                    : "border-borda-forte bg-surface hover:border-accent-texto hover:bg-surface-2"
-                }`}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  alternarEliminada(a.letra);
+                }}
+                className={`flex items-start rounded-2xl border-2 has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent-texto ${estilo}`}
               >
-                <input
-                  type="radio"
-                  name={`q-${q.id}`}
-                  value={a.letra}
-                  checked={marcada}
-                  onChange={() => atualizarAtual({ resposta: a.letra })}
-                  className="sr-only"
-                />
-                <span
-                  aria-hidden="true"
-                  className={`titulo inline-flex size-9 shrink-0 items-center justify-center rounded-full text-base font-extrabold ${
-                    marcada ? "bg-accent text-accent-fg" : "bg-surface-2 text-fg"
+                <label className="flex min-h-14 flex-1 cursor-pointer items-start gap-3 p-3.5">
+                  <input
+                    type="radio"
+                    name={`q-${q.id}`}
+                    value={a.letra}
+                    checked={marcada}
+                    onChange={() => selecionarAlternativa(a.letra)}
+                    className="sr-only"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className={`titulo inline-flex size-9 shrink-0 items-center justify-center rounded-full text-base font-extrabold ${selo}`}
+                  >
+                    {a.letra}
+                  </span>
+                  <span className={`pt-1 ${eliminada ? "text-muted line-through" : ""}`}>
+                    <span className="sr-only">
+                      Alternativa {a.letra} (tecla {i + 1}):{" "}
+                    </span>
+                    {a.texto}
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => alternarEliminada(a.letra)}
+                  aria-pressed={eliminada}
+                  aria-label={eliminada ? `Restaurar alternativa ${a.letra}` : `Riscar alternativa ${a.letra}`}
+                  title={
+                    eliminada
+                      ? "Restaurar alternativa (ou clique direito)"
+                      : "Riscar alternativa eliminada (ou clique direito)"
+                  }
+                  className={`mr-2 mt-2.5 inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl transition-colors ${
+                    eliminada
+                      ? "bg-surface text-fg ring-1 ring-borda-forte"
+                      : "text-muted hover:bg-surface-2 hover:text-fg"
                   }`}
                 >
-                  {a.letra}
-                </span>
-                <span className="pt-1">
-                  <span className="sr-only">
-                    Alternativa {a.letra} (tecla {i + 1}):{" "}
-                  </span>
-                  {a.texto}
-                </span>
-              </label>
+                  <Scissors aria-hidden="true" className="size-4" />
+                </button>
+              </div>
             );
           })}
         </fieldset>
@@ -497,7 +571,7 @@ export default function ExecucaoSimulado({ simuladoId, titulo, tempoLimiteMin, q
         </div>
 
         <p className="hidden text-xs text-muted sm:block">
-          Atalhos: 1–4 ou A–D marcam a alternativa · X marca chute · M marca para revisar · ← / → trocam de questão.
+          Atalhos: 1–4 ou A–D marcam a alternativa · clique direito ou tesoura riscam · X marca chute · M marca para revisar · ← / → trocam de questão.
         </p>
       </article>
 
